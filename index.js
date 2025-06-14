@@ -70,7 +70,7 @@ app.use('*', (req, res) => {
 // Error handling middleware
 app.use(errorHandler);
 
-const PORT = 5000;
+const PORT = 4000;
 
 app.listen(PORT, () => {
   console.log(`🌊 Water Management System Server is running on port ${PORT}`);
