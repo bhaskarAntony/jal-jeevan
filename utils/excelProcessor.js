@@ -8,6 +8,7 @@ const processHouseExcel = (filePath) => {
     const data = XLSX.utils.sheet_to_json(worksheet);
 
     const processedData = data.map(row => ({
+      // village: row['Village'] || row['village'],
       ownerName: row['Owner Name'] || row['OwnerName'] || row['owner_name'],
       aadhaarNumber: row['Aadhaar Number'] || row['AadhaarNumber'] || row['aadhaar_number'],
       mobileNumber: row['Mobile Number'] || row['MobileNumber'] || row['mobile_number'],

@@ -12,6 +12,7 @@ require('dotenv').config();
 const authRoutes = require('./routes/auth');
 const superAdminRoutes = require('./routes/superAdmin');
 const gpAdminRoutes = require('./routes/gpAdmin');
+const pillarAdminRoutes = require('./routes/pillarAdmin');
 
 const app = express();
 
@@ -56,6 +57,7 @@ app.get('/health', (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/super-admin', superAdminRoutes);
 app.use('/api/gp-admin', gpAdminRoutes);
+app.use('/api/pillar-admin', pillarAdminRoutes);
 
 // 404 handler
 app.use('*', (req, res) => {
@@ -68,7 +70,7 @@ app.use('*', (req, res) => {
 // Error handling middleware
 app.use(errorHandler);
 
-const PORT = process.env.PORT || 3000;
+const PORT = 5000;
 
 app.listen(PORT, () => {
   console.log(`🌊 Water Management System Server is running on port ${PORT}`);

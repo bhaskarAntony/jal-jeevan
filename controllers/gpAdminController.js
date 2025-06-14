@@ -631,7 +631,7 @@ const createUser = async (req, res) => {
   try {
     const { name, email, mobile, password, role } = req.body;
 
-    if (!['gp_admin', 'mobile_user'].includes(role)) {
+    if (!['gp_admin', 'mobile_user', 'pillar_admin'].includes(role)) {
       return res.status(400).json({
         success: false,
         message: 'Invalid user role'

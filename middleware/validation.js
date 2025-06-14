@@ -56,9 +56,9 @@ const schemas = {
     email: Joi.string().email().required(),
     mobile: Joi.string().required(),
     password: Joi.string().min(6).required(),
-    role: Joi.string().valid('super_admin', 'gp_admin', 'mobile_user').required(),
+    role: Joi.string().valid('super_admin', 'gp_admin', 'mobile_user', 'pillar_admin').required(),
     gramPanchayat: Joi.string().when('role', {
-      is: Joi.valid('gp_admin', 'mobile_user'),
+      is: Joi.valid('gp_admin', 'mobile_user', 'pillar_admin'),
       then: Joi.required(),
       otherwise: Joi.optional()
     })
@@ -92,13 +92,30 @@ const schemas = {
 
   makePayment: Joi.object({
     amount: Joi.number().min(0.01).required(),
-    paymentMode: Joi.string().valid('cash', 'upi', 'online').required(),
+    paymentMode: Joi.string().valid('cash', 'upi', 'online', 'pay_later').required(),
     transactionId: Joi.string().when('paymentMode', {
       is: Joi.valid('upi', 'online'),
       then: Joi.required(),
       otherwise: Joi.optional()
     }),
     remarks: Joi.string().optional()
+  }),
+
+  createHouseAndBill: Joi.object({
+    village: Joi.string().required(),
+    ownerName: Joi.string().required(),
+    aadhaarNumber: Joi.string().required(),
+    mobileNumber: Joi.string().required(),
+    address: Joi.string().required(),
+    waterMeterNumber: Joi.string().required(),
+    previousMeterReading: Joi.number().min(0).default(0),
+    sequenceNumber: Joi.string().required(),
+    usageType: Joi.string().valid('residential', 'commercial', 'institutional', 'industrial').required(),
+    propertyNumber: Joi.string().required(),
+    currentReading: Joi.number().min(0).required(),
+    month: Joi.string().required(),
+    year: Joi.number().integer().min(2020).max(2030).required(),
+    dueDate: Joi.date().required()
   })
 };
 

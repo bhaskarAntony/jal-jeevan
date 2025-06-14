@@ -230,7 +230,7 @@ router.post('/houses', validate(schemas.createHouse), createHouse);
  *       200:
  *         description: Houses uploaded successfully
  */
-router.post('/houses/upload', upload.single('file'), uploadHousesFromExcel);
+router.post('/houses/upload/:villageId', upload.single('file'), uploadHousesFromExcel);
 
 /**
  * @swagger

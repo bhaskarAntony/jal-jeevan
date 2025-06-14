@@ -26,14 +26,14 @@ const userSchema = new mongoose.Schema({
   },
   role: {
     type: String,
-    enum: ['super_admin', 'gp_admin', 'mobile_user'],
+    enum: ['super_admin', 'gp_admin', 'mobile_user', 'pillar_admin'],
     required: true
   },
   gramPanchayat: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'GramPanchayat',
     required: function() {
-      return this.role === 'gp_admin' || this.role === 'mobile_user';
+      return this.role === 'gp_admin' || this.role === 'mobile_user' || this.role === 'pillar_admin';
     }
   },
   isActive: {

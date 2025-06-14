@@ -71,7 +71,7 @@ const waterBillSchema = new mongoose.Schema({
   },
   paymentMode: {
     type: String,
-    enum: ['cash', 'upi', 'online'],
+    enum: ['cash', 'upi', 'online', 'pay_later'],
     default: null
   },
   transactionId: {
