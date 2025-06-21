@@ -5,7 +5,7 @@ const House = require('../models/House');
 const WaterBill = require('../models/WaterBill');
 const Payment = require('../models/Payment');
 const { calculateWaterBill } = require('../utils/billCalculator');
-const { generateBillPDF } = require('../utils/pdfGenerator');
+const { generateBillPDF, generateReceiptPDF } = require('../utils/pdfGenerator');
 const { generatePaymentQR } = require('../utils/qrCodeGenerator');
 const moment = require('moment');
 
@@ -478,6 +478,119 @@ const getBillDetails = async (req, res) => {
   }
 };
 
+// @desc    Get final view bill with complete post-payment details
+// @route   GET /api/biller/final-view-bill/:billId
+// @access  Private (Mobile User/Biller)
+const getFinalViewBill = async (req, res) => {
+  try {
+    const { billId } = req.params;
+    const gpId = req.user.gramPanchayat._id;
+
+    const bill = await WaterBill.findOne({
+      _id: billId,
+      gramPanchayat: gpId
+    }).populate({
+      path: 'house',
+      populate: {
+        path: 'village'
+      }
+    });
+
+    if (!bill) {
+      return res.status(404).json({
+        success: false,
+        message: 'Bill not found or does not belong to your Gram Panchayat'
+      });
+    }
+
+    // Get all payment transactions for this bill
+    const payments = await Payment.find({
+      bill: bill._id
+    }).populate('collectedBy', 'name email').sort({ createdAt: -1 });
+
+    // Get latest payment details
+    const latestPayment = payments.length > 0 ? payments[0] : null;
+
+    // Calculate updated arrears (remaining amount from this bill)
+    const updatedArrears = bill.remainingAmount;
+
+    // Get Gram Panchayat details
+    const gramPanchayat = await GramPanchayat.findById(gpId);
+
+    // Prepare final bill view data
+    const finalBillData = {
+      // Bill identification
+      billNumber: bill.billNumber,
+      billDate: bill.createdAt,
+      
+      // Customer details
+      customerName: bill.house.ownerName,
+      mobileNumber: bill.house.mobileNumber,
+      address: bill.house.address,
+      village: bill.house.village.name,
+      
+      // Property details
+      sequenceNumber: bill.house.sequenceNumber,
+      propertyNumber: bill.house.propertyNumber,
+      usageType: bill.house.usageType,
+      meterNumber: bill.house.waterMeterNumber,
+      
+      // Meter readings
+      previousReading: bill.previousReading,
+      currentReading: bill.currentReading,
+      totalUsage: bill.totalUsage,
+      
+      // Bill amounts
+      currentDemand: bill.currentDemand,
+      arrears: bill.arrears,
+      interest: bill.interest,
+      others: bill.others,
+      totalAmount: bill.totalAmount,
+      paidAmount: bill.paidAmount,
+      remainingAmount: bill.remainingAmount,
+      
+      // Payment details
+      paymentStatus: bill.status,
+      paidDate: bill.paidDate,
+      paymentMode: bill.paymentMode,
+      transactionId: bill.transactionId,
+      
+      // Additional details
+      dueDate: bill.dueDate,
+      month: bill.month,
+      year: bill.year,
+      
+      // Payment history
+      paymentHistory: payments,
+      latestPayment,
+      
+      // GP details
+      gramPanchayat: {
+        name: gramPanchayat.name,
+        address: gramPanchayat.address,
+        contactPerson: gramPanchayat.contactPerson
+      },
+      
+      // Status flags
+      isFullyPaid: bill.status === 'paid',
+      isPartiallyPaid: bill.status === 'partial',
+      isPending: bill.status === 'pending',
+      hasArrears: updatedArrears > 0
+    };
+
+    res.json({
+      success: true,
+      data: finalBillData
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message
+    });
+  }
+};
+
 // @desc    Process payment for bill
 // @route   POST /api/biller/bills/:billId/payment
 // @access  Private (Mobile User/Biller)
@@ -548,7 +661,9 @@ const processPayment = async (req, res) => {
       message: 'Payment processed successfully',
       data: {
         bill: updatedBill,
-        payment
+        payment,
+        redirectToFinalView: true,
+        finalViewUrl: `/api/biller/final-view-bill/${bill._id}`
       }
     });
   } catch (error) {
@@ -666,6 +781,65 @@ const downloadBillPDF = async (req, res) => {
   }
 };
 
+// @desc    Download final bill receipt PDF (post-payment)
+// @route   GET /api/biller/final-view-bill/:billId/print
+// @access  Private (Mobile User/Biller)
+const downloadFinalBillReceipt = async (req, res) => {
+  try {
+    const { billId } = req.params;
+    const gpId = req.user.gramPanchayat._id;
+
+    const bill = await WaterBill.findOne({
+      _id: billId,
+      gramPanchayat: gpId
+    }).populate({
+      path: 'house',
+      populate: {
+        path: 'village'
+      }
+    });
+
+    if (!bill) {
+      return res.status(404).json({
+        success: false,
+        message: 'Bill not found or does not belong to your Gram Panchayat'
+      });
+    }
+
+    // Get payment details
+    const payments = await Payment.find({
+      bill: bill._id
+    }).populate('collectedBy', 'name').sort({ createdAt: -1 });
+
+    const gramPanchayat = await GramPanchayat.findById(gpId);
+
+    const receiptData = {
+      bill,
+      house: bill.house,
+      payments,
+      gramPanchayat,
+      generatedBy: req.user.name,
+      generatedAt: new Date()
+    };
+
+    const pdfPath = await generateReceiptPDF(receiptData);
+    
+    res.download(pdfPath, `receipt_${bill.billNumber}.pdf`, (err) => {
+      if (err) {
+        console.error('Receipt PDF download error:', err);
+      }
+      // Clean up temp file
+      require('fs').unlinkSync(pdfPath);
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message
+    });
+  }
+};
+
 // @desc    Get biller profile
 // @route   GET /api/biller/profile
 // @access  Private (Mobile User/Biller)
@@ -696,8 +870,10 @@ module.exports = {
   getHouseDetails,
   generateWaterBill,
   getBillDetails,
+  getFinalViewBill,
   processPayment,
   generatePaymentQRCode,
   downloadBillPDF,
+  downloadFinalBillReceipt,
   getBillerProfile
 };
