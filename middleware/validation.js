@@ -84,7 +84,9 @@ const schemas = {
   }),
 
   generateBill: Joi.object({
+    previousReading: Joi.number().min(0).required(),
     currentReading: Joi.number().min(0).required(),
+    totalUsage: Joi.number().min(0).required(),
     month: Joi.string().required(),
     year: Joi.number().integer().min(2020).max(2030).required(),
     dueDate: Joi.date().required()
