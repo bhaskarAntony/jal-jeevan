@@ -409,7 +409,7 @@ const generateWaterBill = async (req, res) => {
     }
 
     // Validate required fields
-    if (!previousReading || !currentReading || !totalUsage || !month || !year || !dueDate) {
+    if (previousReading === undefined || currentReading === undefined || totalUsage === undefined || !month || !year || !dueDate) {
       return res.status(400).json({
         success: false,
         message: 'All required fields must be provided'
@@ -433,6 +433,13 @@ const generateWaterBill = async (req, res) => {
     const prevReading = parseFloat(previousReading);
     const currReading = parseFloat(currentReading);
     const usage = parseFloat(totalUsage);
+
+    if (isNaN(prevReading) || isNaN(currReading) || isNaN(usage)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid reading values. Must be valid numbers'
+      });
+    }
 
     if (currReading < prevReading) {
       return res.status(400).json({

@@ -10,11 +10,12 @@ const {
   getHouseDetails,
   generateWaterBill,
   getBillDetails,
+  getFinalViewBill,
   processPayment,
   generatePaymentQRCode,
   downloadBillPDF,
-  getBillerProfile,
-  getFinalViewBill
+  downloadFinalBillReceipt,
+  getBillerProfile
 } = require('../controllers/billerController');
 
 // Apply auth and mobile user (biller) authorization to all routes
@@ -253,7 +254,7 @@ router.get('/houses/:houseId', getHouseDetails);
  *       404:
  *         description: House not found
  */
-router.post('/houses/:houseId/generate-bill', generateWaterBill);
+router.post('/houses/:houseId/generate-bill', validate(schemas.generateBill), generateWaterBill);
 
 /**
  * @swagger
@@ -276,6 +277,50 @@ router.post('/houses/:houseId/generate-bill', generateWaterBill);
  *         description: Bill not found or does not belong to your Gram Panchayat
  */
 router.get('/bills/:billId', getBillDetails);
+
+/**
+ * @swagger
+ * /api/biller/final-view-bill/{billId}:
+ *   get:
+ *     summary: Get final view bill with complete post-payment details
+ *     tags: [Biller]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: billId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Final bill view retrieved successfully
+ *       404:
+ *         description: Bill not found or does not belong to your Gram Panchayat
+ */
+router.get('/final-view-bill/:billId', getFinalViewBill);
+
+/**
+ * @swagger
+ * /api/biller/final-view-bill/{billId}/print:
+ *   get:
+ *     summary: Download final bill receipt PDF (post-payment)
+ *     tags: [Biller]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: billId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Receipt PDF generated and downloaded successfully
+ *       404:
+ *         description: Bill not found
+ */
+router.get('/final-view-bill/:billId/print', downloadFinalBillReceipt);
 
 /**
  * @swagger
@@ -365,31 +410,6 @@ router.get('/bills/:billId/qr-code', generatePaymentQRCode);
  *         description: Bill not found
  */
 router.get('/bills/:billId/pdf', downloadBillPDF);
-
-
-
-/**
- * @swagger
- * /api/biller/final-view-bill/{billId}/print:
- *   get:
- *     summary: Get Final View Bill
- *     tags: [Biller]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: billId
- *         required: true
- *         schema:
- *           type: string
- *     responses:
- *       200:
- *         description: finalBillData
- *       404:
- *         description: Bill not found or does not belong to your Gram Panchayat
- */
-router.get('/api/biller/final-view-bill/:billId/print', getFinalViewBill)
-
 
 /**
  * @swagger
