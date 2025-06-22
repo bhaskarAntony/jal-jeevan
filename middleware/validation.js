@@ -59,7 +59,7 @@ const schemas = {
     role: Joi.string().valid('super_admin', 'gp_admin', 'mobile_user', 'pillar_admin').required(),
     gramPanchayat: Joi.string().when('role', {
       is: Joi.valid('gp_admin', 'mobile_user', 'pillar_admin'),
-      then: Joi.required(),
+      then: Joi.string().pattern(/^[0-9a-fA-F]{24}$/).required(),
       otherwise: Joi.optional()
     })
   }),
@@ -71,7 +71,7 @@ const schemas = {
   }),
 
   createHouse: Joi.object({
-    village: Joi.string().required(),
+    village: Joi.string().pattern(/^[0-9a-fA-F]{24}$/).required(),
     ownerName: Joi.string().required(),
     aadhaarNumber: Joi.string().required(),
     mobileNumber: Joi.string().required(),
@@ -104,7 +104,7 @@ const schemas = {
   }),
 
   createHouseAndBill: Joi.object({
-    village: Joi.string().required(),
+    village: Joi.string().pattern(/^[0-9a-fA-F]{24}$/).required(),
     ownerName: Joi.string().required(),
     aadhaarNumber: Joi.string().required(),
     mobileNumber: Joi.string().required(),

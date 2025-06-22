@@ -8,6 +8,7 @@ const { calculateWaterBill } = require('../utils/billCalculator');
 const { generateBillPDF, generateReceiptPDF } = require('../utils/pdfGenerator');
 const { generatePaymentQR } = require('../utils/qrCodeGenerator');
 const moment = require('moment');
+const mongoose = require('mongoose');
 
 // @desc    Get biller dashboard data
 // @route   GET /api/biller/dashboard
@@ -213,6 +214,22 @@ const createHouse = async (req, res) => {
 
     const gpId = req.user.gramPanchayat._id;
 
+    // Validate required fields
+    if (!village || !ownerName || !aadhaarNumber || !mobileNumber || !address || !waterMeterNumber || !sequenceNumber || !usageType || !propertyNumber) {
+      return res.status(400).json({
+        success: false,
+        message: 'All required fields must be provided'
+      });
+    }
+
+    // Validate village ObjectId format
+    if (!mongoose.Types.ObjectId.isValid(village)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid village ID format'
+      });
+    }
+
     // Check if meter number already exists in this GP
     const existingHouse = await House.findOne({
       waterMeterNumber,
@@ -241,18 +258,27 @@ const createHouse = async (req, res) => {
       });
     }
 
+    // Validate usage type
+    const validUsageTypes = ['residential', 'commercial', 'institutional', 'industrial'];
+    if (!validUsageTypes.includes(usageType)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid usage type. Must be one of: residential, commercial, institutional, industrial'
+      });
+    }
+
     const house = new House({
-      village,
+      village: new mongoose.Types.ObjectId(village),
       gramPanchayat: gpId,
-      ownerName,
-      aadhaarNumber,
-      mobileNumber,
-      address,
-      waterMeterNumber,
+      ownerName: ownerName.trim(),
+      aadhaarNumber: aadhaarNumber.trim(),
+      mobileNumber: mobileNumber.trim(),
+      address: address.trim(),
+      waterMeterNumber: waterMeterNumber.trim(),
       previousMeterReading: parseFloat(previousMeterReading) || 0,
-      sequenceNumber,
+      sequenceNumber: sequenceNumber.trim(),
       usageType,
-      propertyNumber
+      propertyNumber: propertyNumber.trim()
     });
 
     await house.save();
@@ -265,6 +291,26 @@ const createHouse = async (req, res) => {
       data: populatedHouse
     });
   } catch (error) {
+    console.error('House creation error:', error);
+    
+    // Handle mongoose validation errors
+    if (error.name === 'ValidationError') {
+      const errors = Object.values(error.errors).map(err => err.message);
+      return res.status(400).json({
+        success: false,
+        message: 'Validation error',
+        errors
+      });
+    }
+
+    // Handle duplicate key errors
+    if (error.code === 11000) {
+      return res.status(400).json({
+        success: false,
+        message: 'Water meter number already exists'
+      });
+    }
+
     res.status(500).json({
       success: false,
       message: 'Server error',
@@ -280,6 +326,14 @@ const getHouseDetails = async (req, res) => {
   try {
     const { houseId } = req.params;
     const gpId = req.user.gramPanchayat._id;
+
+    // Validate houseId format
+    if (!mongoose.Types.ObjectId.isValid(houseId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid house ID format'
+      });
+    }
 
     const house = await House.findOne({
       _id: houseId,
@@ -346,6 +400,22 @@ const generateWaterBill = async (req, res) => {
 
     const gpId = req.user.gramPanchayat._id;
 
+    // Validate houseId format
+    if (!mongoose.Types.ObjectId.isValid(houseId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid house ID format'
+      });
+    }
+
+    // Validate required fields
+    if (!previousReading || !currentReading || !totalUsage || !month || !year || !dueDate) {
+      return res.status(400).json({
+        success: false,
+        message: 'All required fields must be provided'
+      });
+    }
+
     const house = await House.findOne({
       _id: houseId,
       gramPanchayat: gpId,
@@ -360,15 +430,19 @@ const generateWaterBill = async (req, res) => {
     }
 
     // Validate readings
-    if (currentReading < previousReading) {
+    const prevReading = parseFloat(previousReading);
+    const currReading = parseFloat(currentReading);
+    const usage = parseFloat(totalUsage);
+
+    if (currReading < prevReading) {
       return res.status(400).json({
         success: false,
         message: 'Current reading cannot be less than previous reading'
       });
     }
 
-    const calculatedUsage = currentReading - previousReading;
-    if (Math.abs(calculatedUsage - totalUsage) > 0.01) {
+    const calculatedUsage = currReading - prevReading;
+    if (Math.abs(calculatedUsage - usage) > 0.01) {
       return res.status(400).json({
         success: false,
         message: 'Total usage calculation mismatch'
@@ -378,7 +452,7 @@ const generateWaterBill = async (req, res) => {
     const gramPanchayat = await GramPanchayat.findById(gpId);
 
     // Calculate bill amount using tariff
-    const currentDemand = calculateWaterBill(totalUsage, gramPanchayat.waterTariff, house.usageType);
+    const currentDemand = calculateWaterBill(usage, gramPanchayat.waterTariff, house.usageType);
 
     // Check for arrears from previous unpaid bills
     const unpaidBills = await WaterBill.find({
@@ -393,9 +467,9 @@ const generateWaterBill = async (req, res) => {
       gramPanchayat: gpId,
       month,
       year: parseInt(year),
-      previousReading: parseFloat(previousReading),
-      currentReading: parseFloat(currentReading),
-      totalUsage: parseFloat(totalUsage),
+      previousReading: prevReading,
+      currentReading: currReading,
+      totalUsage: usage,
       currentDemand,
       arrears,
       interest: 0,
@@ -408,7 +482,7 @@ const generateWaterBill = async (req, res) => {
     await bill.save();
 
     // Update house previous reading
-    house.previousMeterReading = currentReading;
+    house.previousMeterReading = currReading;
     await house.save();
 
     const populatedBill = await WaterBill.findById(bill._id).populate({
@@ -424,6 +498,7 @@ const generateWaterBill = async (req, res) => {
       data: populatedBill
     });
   } catch (error) {
+    console.error('Bill generation error:', error);
     res.status(500).json({
       success: false,
       message: 'Server error',
@@ -439,6 +514,14 @@ const getBillDetails = async (req, res) => {
   try {
     const { billId } = req.params;
     const gpId = req.user.gramPanchayat._id;
+
+    // Validate billId format
+    if (!mongoose.Types.ObjectId.isValid(billId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid bill ID format'
+      });
+    }
 
     const bill = await WaterBill.findOne({
       _id: billId,
@@ -485,6 +568,14 @@ const getFinalViewBill = async (req, res) => {
   try {
     const { billId } = req.params;
     const gpId = req.user.gramPanchayat._id;
+
+    // Validate billId format
+    if (!mongoose.Types.ObjectId.isValid(billId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid bill ID format'
+      });
+    }
 
     const bill = await WaterBill.findOne({
       _id: billId,
@@ -600,6 +691,22 @@ const processPayment = async (req, res) => {
     const { amount, paymentMode, transactionId, remarks } = req.body;
     const gpId = req.user.gramPanchayat._id;
 
+    // Validate billId format
+    if (!mongoose.Types.ObjectId.isValid(billId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid bill ID format'
+      });
+    }
+
+    // Validate required fields
+    if (!amount || !paymentMode) {
+      return res.status(400).json({
+        success: false,
+        message: 'Amount and payment mode are required'
+      });
+    }
+
     const bill = await WaterBill.findOne({
       _id: billId,
       gramPanchayat: gpId
@@ -612,7 +719,8 @@ const processPayment = async (req, res) => {
       });
     }
 
-    if (amount > bill.remainingAmount) {
+    const paymentAmount = parseFloat(amount);
+    if (paymentAmount > bill.remainingAmount) {
       return res.status(400).json({
         success: false,
         message: 'Payment amount cannot exceed remaining amount'
@@ -622,7 +730,7 @@ const processPayment = async (req, res) => {
     // Create payment record
     const payment = new Payment({
       bill: bill._id,
-      amount: parseFloat(amount),
+      amount: paymentAmount,
       paymentMode,
       transactionId,
       collectedBy: req.user.id,
@@ -633,8 +741,8 @@ const processPayment = async (req, res) => {
 
     // Update bill only if not pay_later
     if (paymentMode !== 'pay_later') {
-      bill.paidAmount += parseFloat(amount);
-      bill.remainingAmount -= parseFloat(amount);
+      bill.paidAmount += paymentAmount;
+      bill.remainingAmount -= paymentAmount;
       
       if (bill.remainingAmount === 0) {
         bill.status = 'paid';
@@ -667,6 +775,7 @@ const processPayment = async (req, res) => {
       }
     });
   } catch (error) {
+    console.error('Payment processing error:', error);
     res.status(500).json({
       success: false,
       message: 'Server error',
@@ -682,6 +791,14 @@ const generatePaymentQRCode = async (req, res) => {
   try {
     const { billId } = req.params;
     const gpId = req.user.gramPanchayat._id;
+
+    // Validate billId format
+    if (!mongoose.Types.ObjectId.isValid(billId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid bill ID format'
+      });
+    }
 
     const bill = await WaterBill.findOne({
       _id: billId,
@@ -746,6 +863,14 @@ const downloadBillPDF = async (req, res) => {
     const { billId } = req.params;
     const gpId = req.user.gramPanchayat._id;
 
+    // Validate billId format
+    if (!mongoose.Types.ObjectId.isValid(billId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid bill ID format'
+      });
+    }
+
     const bill = await WaterBill.findOne({
       _id: billId,
       gramPanchayat: gpId
@@ -788,6 +913,14 @@ const downloadFinalBillReceipt = async (req, res) => {
   try {
     const { billId } = req.params;
     const gpId = req.user.gramPanchayat._id;
+
+    // Validate billId format
+    if (!mongoose.Types.ObjectId.isValid(billId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid bill ID format'
+      });
+    }
 
     const bill = await WaterBill.findOne({
       _id: billId,
