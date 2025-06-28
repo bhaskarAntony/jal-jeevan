@@ -53,6 +53,9 @@ const getDashboard = async (req, res) => {
       .limit(10)
       .sort({ createdAt: -1 });
 
+    // Get full GP data
+    const gramPanchayat = await GramPanchayat.findById(gpId);
+
     res.json({
       success: true,
       data: {
@@ -62,7 +65,19 @@ const getDashboard = async (req, res) => {
         paidBills,
         unpaidBills,
         recentBills,
-        gramPanchayat: req.user.gramPanchayat
+        gramPanchayat: {
+          id: gramPanchayat._id,
+          name: gramPanchayat.name,
+          uniqueId: gramPanchayat.uniqueId,
+          district: gramPanchayat.district,
+          taluk: gramPanchayat.taluk,
+          address: gramPanchayat.address,
+          pincode: gramPanchayat.pincode,
+          state: gramPanchayat.state,
+          contactPerson: gramPanchayat.contactPerson,
+          waterTariff: gramPanchayat.waterTariff,
+          qrCodeData: gramPanchayat.qrCodeData
+        }
       }
     });
   } catch (error) {
@@ -181,9 +196,20 @@ const getVillages = async (req, res) => {
       isActive: true
     }).sort({ name: 1 });
 
+    const gramPanchayat = await GramPanchayat.findById(gpId);
+
     res.json({
       success: true,
-      data: villages
+      data: {
+        villages,
+        gramPanchayat: {
+          id: gramPanchayat._id,
+          name: gramPanchayat.name,
+          uniqueId: gramPanchayat.uniqueId,
+          district: gramPanchayat.district,
+          taluk: gramPanchayat.taluk
+        }
+      }
     });
   } catch (error) {
     res.status(500).json({
@@ -364,6 +390,8 @@ const getHouseDetails = async (req, res) => {
       house: house._id
     }).sort({ createdAt: -1 }).limit(10);
 
+    const gramPanchayat = await GramPanchayat.findById(gpId);
+
     res.json({
       success: true,
       data: {
@@ -371,7 +399,13 @@ const getHouseDetails = async (req, res) => {
         latestBill,
         unpaidBillsCount,
         bills,
-        canGenerateNewBill: true
+        canGenerateNewBill: true,
+        gramPanchayat: {
+          id: gramPanchayat._id,
+          name: gramPanchayat.name,
+          uniqueId: gramPanchayat.uniqueId,
+          waterTariff: gramPanchayat.waterTariff
+        }
       }
     });
   } catch (error) {
@@ -502,7 +536,14 @@ const generateWaterBill = async (req, res) => {
     res.status(201).json({
       success: true,
       message: 'Water bill generated successfully',
-      data: populatedBill
+      data: {
+        bill: populatedBill,
+        gramPanchayat: {
+          id: gramPanchayat._id,
+          name: gramPanchayat.name,
+          uniqueId: gramPanchayat.uniqueId
+        }
+      }
     });
   } catch (error) {
     console.error('Bill generation error:', error);
@@ -552,11 +593,19 @@ const getBillDetails = async (req, res) => {
       bill: bill._id
     }).populate('collectedBy', 'name').sort({ createdAt: -1 });
 
+    const gramPanchayat = await GramPanchayat.findById(gpId);
+
     res.json({
       success: true,
       data: {
         bill,
-        payments
+        payments,
+        gramPanchayat: {
+          id: gramPanchayat._id,
+          name: gramPanchayat.name,
+          uniqueId: gramPanchayat.uniqueId,
+          qrCodeData: gramPanchayat.qrCodeData
+        }
       }
     });
   } catch (error) {
@@ -638,14 +687,19 @@ const getFinalViewBill = async (req, res) => {
       currentReading: bill.currentReading,
       totalUsage: bill.totalUsage,
       
-      // Bill amounts
+      // Bill amounts (with frontend field mapping)
       currentDemand: bill.currentDemand,
+      demand: bill.currentDemand,
       arrears: bill.arrears,
       interest: bill.interest,
       others: bill.others,
       totalAmount: bill.totalAmount,
+      amount: bill.totalAmount,
+      billAmount: bill.totalAmount,
       paidAmount: bill.paidAmount,
+      paid: bill.paidAmount,
       remainingAmount: bill.remainingAmount,
+      remaining: bill.remainingAmount,
       
       // Payment details
       paymentStatus: bill.status,
@@ -664,9 +718,12 @@ const getFinalViewBill = async (req, res) => {
       
       // GP details
       gramPanchayat: {
+        id: gramPanchayat._id,
         name: gramPanchayat.name,
+        uniqueId: gramPanchayat.uniqueId,
         address: gramPanchayat.address,
-        contactPerson: gramPanchayat.contactPerson
+        contactPerson: gramPanchayat.contactPerson,
+        qrCodeData: gramPanchayat.qrCodeData
       },
       
       // Status flags
@@ -714,6 +771,14 @@ const processPayment = async (req, res) => {
       });
     }
 
+    // Validate transaction ID based on payment mode
+    if ((paymentMode === 'upi' || paymentMode === 'online') && !transactionId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Transaction ID is required for UPI and online payments'
+      });
+    }
+
     const bill = await WaterBill.findOne({
       _id: billId,
       gramPanchayat: gpId
@@ -739,7 +804,7 @@ const processPayment = async (req, res) => {
       bill: bill._id,
       amount: paymentAmount,
       paymentMode,
-      transactionId,
+      transactionId: (paymentMode === 'cash' || paymentMode === 'pay_later') ? null : transactionId,
       collectedBy: req.user.id,
       remarks
     });
@@ -758,8 +823,8 @@ const processPayment = async (req, res) => {
       }
 
       bill.paymentMode = paymentMode;
-      bill.transactionId = transactionId;
-      bill.paidDate = new Date();
+      bill.transactionId = (paymentMode === 'cash' || paymentMode === 'pay_later') ? null : transactionId;
+      bill.paidDate = new Date(); // Set paid date
 
       await bill.save();
     }
@@ -771,6 +836,8 @@ const processPayment = async (req, res) => {
       }
     });
 
+    const gramPanchayat = await GramPanchayat.findById(gpId);
+
     res.json({
       success: true,
       message: 'Payment processed successfully',
@@ -778,7 +845,12 @@ const processPayment = async (req, res) => {
         bill: updatedBill,
         payment,
         redirectToFinalView: true,
-        finalViewUrl: `/api/biller/final-view-bill/${bill._id}`
+        finalViewUrl: `/api/biller/final-view-bill/${bill._id}`,
+        gramPanchayat: {
+          id: gramPanchayat._id,
+          name: gramPanchayat.name,
+          uniqueId: gramPanchayat.uniqueId
+        }
       }
     });
   } catch (error) {
@@ -791,7 +863,7 @@ const processPayment = async (req, res) => {
   }
 };
 
-// @desc    Generate payment QR code
+// @desc    Generate payment QR code for bill
 // @route   GET /api/biller/bills/:billId/qr-code
 // @access  Private (Mobile User/Biller)
 const generatePaymentQRCode = async (req, res) => {
@@ -850,7 +922,92 @@ const generatePaymentQRCode = async (req, res) => {
         amount: bill.remainingAmount,
         billNumber: bill.billNumber,
         upiId: gramPanchayat.qrCodeData.upiId,
-        merchantName: gramPanchayat.qrCodeData.merchantName || gramPanchayat.name
+        merchantName: gramPanchayat.qrCodeData.merchantName || gramPanchayat.name,
+        gramPanchayat: {
+          id: gramPanchayat._id,
+          name: gramPanchayat.name,
+          uniqueId: gramPanchayat.uniqueId
+        }
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message
+    });
+  }
+};
+
+// @desc    Generate QR code for house (without bill ID)
+// @route   GET /api/biller/houses/:houseId/qr-code
+// @access  Private (Mobile User/Biller)
+const generateHouseQRCode = async (req, res) => {
+  try {
+    const { houseId } = req.params;
+    const { amount = 100 } = req.query; // Default amount for pre-bill QR
+    const gpId = req.user.gramPanchayat._id;
+
+    // Validate houseId format
+    if (!mongoose.Types.ObjectId.isValid(houseId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid house ID format'
+      });
+    }
+
+    const house = await House.findOne({
+      _id: houseId,
+      gramPanchayat: gpId,
+      isActive: true
+    }).populate('village');
+
+    if (!house) {
+      return res.status(404).json({
+        success: false,
+        message: 'House not found or does not belong to your Gram Panchayat'
+      });
+    }
+
+    const gramPanchayat = await GramPanchayat.findById(gpId);
+    
+    if (!gramPanchayat.qrCodeData || !gramPanchayat.qrCodeData.upiId) {
+      return res.status(400).json({
+        success: false,
+        message: 'UPI details not configured for this Gram Panchayat'
+      });
+    }
+
+    const qrResult = await generatePaymentQR(
+      parseFloat(amount),
+      gramPanchayat.qrCodeData.upiId,
+      gramPanchayat.qrCodeData.merchantName || gramPanchayat.name,
+      `House-${house.waterMeterNumber}`
+    );
+
+    if (!qrResult.success) {
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to generate QR code',
+        error: qrResult.error
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        qrCode: qrResult.qrCode,
+        amount: parseFloat(amount),
+        houseId: house._id,
+        meterNumber: house.waterMeterNumber,
+        ownerName: house.ownerName,
+        upiId: gramPanchayat.qrCodeData.upiId,
+        merchantName: gramPanchayat.qrCodeData.merchantName || gramPanchayat.name,
+        gramPanchayat: {
+          id: gramPanchayat._id,
+          name: gramPanchayat.name,
+          uniqueId: gramPanchayat.uniqueId
+        }
       }
     });
   } catch (error) {
@@ -895,7 +1052,8 @@ const downloadBillPDF = async (req, res) => {
       });
     }
 
-    const pdfPath = await generateBillPDF(bill, bill.house);
+    const gramPanchayat = await GramPanchayat.findById(gpId);
+    const pdfPath = await generateBillPDF(bill, bill.house, gramPanchayat);
     
     res.download(pdfPath, `bill_${bill.billNumber}.pdf`, (err) => {
       if (err) {
@@ -991,7 +1149,18 @@ const getBillerProfile = async (req, res) => {
 
     res.json({
       success: true,
-      data: user
+      data: {
+        user,
+        gramPanchayat: {
+          id: user.gramPanchayat._id,
+          name: user.gramPanchayat.name,
+          uniqueId: user.gramPanchayat.uniqueId,
+          district: user.gramPanchayat.district,
+          taluk: user.gramPanchayat.taluk,
+          address: user.gramPanchayat.address,
+          contactPerson: user.gramPanchayat.contactPerson
+        }
+      }
     });
   } catch (error) {
     res.status(500).json({
@@ -1013,6 +1182,7 @@ module.exports = {
   getFinalViewBill,
   processPayment,
   generatePaymentQRCode,
+  generateHouseQRCode,
   downloadBillPDF,
   downloadFinalBillReceipt,
   getBillerProfile

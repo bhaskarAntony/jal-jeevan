@@ -95,12 +95,12 @@ const schemas = {
   makePayment: Joi.object({
     amount: Joi.number().min(0.01).required(),
     paymentMode: Joi.string().valid('cash', 'upi', 'online', 'pay_later').required(),
-    transactionId: Joi.string().when('paymentMode', {
+    transactionId: Joi.when('paymentMode', {
       is: Joi.valid('upi', 'online'),
-      then: Joi.required(),
-      otherwise: Joi.optional()
+      then: Joi.string().required(),
+      otherwise: Joi.string().optional().allow(null, '')
     }),
-    remarks: Joi.string().optional()
+    remarks: Joi.string().optional().allow('')
   }),
 
   createHouseAndBill: Joi.object({

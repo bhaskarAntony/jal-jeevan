@@ -13,6 +13,7 @@ const {
   getFinalViewBill,
   processPayment,
   generatePaymentQRCode,
+  generateHouseQRCode,
   downloadBillPDF,
   downloadFinalBillReceipt,
   getBillerProfile
@@ -73,6 +74,22 @@ router.use(authorize('mobile_user'));
  *         dueDate:
  *           type: string
  *           format: date
+ *     PaymentRequest:
+ *       type: object
+ *       required:
+ *         - amount
+ *         - paymentMode
+ *       properties:
+ *         amount:
+ *           type: number
+ *         paymentMode:
+ *           type: string
+ *           enum: [cash, upi, online, pay_later]
+ *         transactionId:
+ *           type: string
+ *           description: Required for UPI and online payments, optional for cash and pay_later
+ *         remarks:
+ *           type: string
  */
 
 /**
@@ -258,6 +275,35 @@ router.post('/houses/:houseId/generate-bill', validate(schemas.generateBill), ge
 
 /**
  * @swagger
+ * /api/biller/houses/{houseId}/qr-code:
+ *   get:
+ *     summary: Generate QR code for house (without bill ID)
+ *     tags: [Biller]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: houseId
+ *         required: true
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: amount
+ *         schema:
+ *           type: number
+ *         description: Amount for QR code (default 100)
+ *     responses:
+ *       200:
+ *         description: QR code generated successfully
+ *       400:
+ *         description: UPI details not configured
+ *       404:
+ *         description: House not found
+ */
+router.get('/houses/:houseId/qr-code', generateHouseQRCode);
+
+/**
+ * @swagger
  * /api/biller/bills/{billId}:
  *   get:
  *     summary: Get bill details
@@ -341,25 +387,12 @@ router.get('/final-view-bill/:billId/print', downloadFinalBillReceipt);
  *       content:
  *         application/json:
  *           schema:
- *             type: object
- *             required:
- *               - amount
- *               - paymentMode
- *             properties:
- *               amount:
- *                 type: number
- *               paymentMode:
- *                 type: string
- *                 enum: [cash, upi, pay_later]
- *               transactionId:
- *                 type: string
- *               remarks:
- *                 type: string
+ *             $ref: '#/components/schemas/PaymentRequest'
  *     responses:
  *       200:
  *         description: Payment processed successfully
  *       400:
- *         description: Invalid payment amount
+ *         description: Invalid payment amount or missing transaction ID
  *       404:
  *         description: Bill not found
  */

@@ -21,6 +21,17 @@ A comprehensive backend system for managing water billing and administration acr
 - **Tariff Management**: Configure water tariff rates
 - **Reports**: Comprehensive billing and collection reports
 
+### Biller (Mobile User) Features
+- **Dashboard**: Real-time statistics and recent bills overview
+- **Customer Search**: Advanced search by meter ID, name, mobile, or Aadhaar
+- **House Management**: Create new houses and manage existing ones
+- **Bill Generation**: Generate water bills with automatic tariff calculation
+- **Payment Processing**: Process payments with multiple modes (Cash, UPI, Online, Pay Later)
+- **QR Code Generation**: Generate payment QR codes for bills and houses
+- **Final Bill View**: Complete post-payment bill view with transaction details
+- **PDF Downloads**: Generate and download bills and receipts
+- **Profile Management**: View and manage biller profile
+
 ## 🏗️ Architecture
 
 ```
@@ -30,7 +41,8 @@ A comprehensive backend system for managing water billing and administration acr
 ├── controllers/           # Business logic
 │   ├── authController.js
 │   ├── superAdminController.js
-│   └── gpAdminController.js
+│   ├── gpAdminController.js
+│   └── billerController.js
 ├── middleware/           # Custom middleware
 │   ├── auth.js          # JWT authentication
 │   ├── validation.js    # Request validation
@@ -45,7 +57,8 @@ A comprehensive backend system for managing water billing and administration acr
 ├── routes/              # API routes
 │   ├── auth.js
 │   ├── superAdmin.js
-│   └── gpAdmin.js
+│   ├── gpAdmin.js
+│   └── biller.js
 ├── utils/               # Utility functions
 │   ├── emailService.js
 │   ├── pdfGenerator.js
@@ -79,7 +92,7 @@ npm install
 Create a `.env` file in the root directory:
 ```env
 NODE_ENV=development
-PORT=3000
+PORT=5000
 
 # Database Configuration
 MONGODB_URI=mongodb://localhost:27017/water_management
@@ -115,15 +128,15 @@ npm start
 ```
 
 5. **Access the API**
-- Server: `http://localhost:3000`
-- API Documentation: `http://localhost:3000/api/docs`
-- Health Check: `http://localhost:3000/health`
+- Server: `http://localhost:5000`
+- API Documentation: `http://localhost:5000/api/docs`
+- Health Check: `http://localhost:5000/health`
 
 ## 📖 API Documentation
 
 The API is fully documented using Swagger. Access the interactive documentation at:
 ```
-http://localhost:3000/api/docs
+http://localhost:5000/api/docs
 ```
 
 ### Authentication
@@ -162,6 +175,22 @@ Authorization: Bearer <your-jwt-token>
 - `POST /api/gp-admin/bills/:id/payment` - Process payment
 - `GET /api/gp-admin/bills/:id/qr-code` - Generate payment QR code
 
+#### Biller (Mobile User)
+- `GET /api/biller/dashboard` - Dashboard with GP statistics
+- `GET /api/biller/search` - Search customers by various criteria
+- `GET /api/biller/villages` - Get villages for house creation
+- `POST /api/biller/houses` - Create new house
+- `GET /api/biller/houses/:houseId` - Get house details
+- `POST /api/biller/houses/:houseId/generate-bill` - Generate water bill
+- `GET /api/biller/houses/:houseId/qr-code` - Generate QR code for house
+- `GET /api/biller/bills/:billId` - Get bill details
+- `GET /api/biller/final-view-bill/:billId` - Final bill view (post-payment)
+- `GET /api/biller/final-view-bill/:billId/print` - Download receipt PDF
+- `POST /api/biller/bills/:billId/payment` - Process payment
+- `GET /api/biller/bills/:billId/qr-code` - Generate payment QR code
+- `GET /api/biller/bills/:billId/pdf` - Download bill PDF
+- `GET /api/biller/profile` - Get biller profile
+
 ## 💾 Database Schema
 
 ### User Model
@@ -187,6 +216,7 @@ Authorization: Bearer <your-jwt-token>
 - Monthly water bills
 - Payment tracking
 - Arrears calculation
+- Field mapping for frontend compatibility
 
 ### Payment Model
 - Payment transaction records
@@ -201,10 +231,20 @@ Authorization: Bearer <your-jwt-token>
 - Interest and penalty support
 
 ### Payment Processing
-- Cash payments with manual entry
-- UPI payments with QR code generation
+- **Cash Payments**: Manual entry without transaction ID
+- **UPI Payments**: QR code generation with transaction ID validation
+- **Online Payments**: Transaction ID required
+- **Pay Later**: Deferred payment option
 - Payment history tracking
 - Partial payment support
+- Automatic paid date insertion
+
+### QR Code Generation
+- **Bill-based QR**: Generate QR for specific bills
+- **House-based QR**: Generate QR for houses without bills
+- UPI payment integration
+- Dynamic amount configuration
+- Real-time payment verification
 
 ### Excel Import
 - Bulk house data import
@@ -212,20 +252,23 @@ Authorization: Bearer <your-jwt-token>
 - Data validation and error reporting
 
 ### PDF Generation
-- Professional bill layout
+- Professional bill layout with GP details
 - Detailed billing information
-- Downloadable receipts
+- Post-payment receipt generation
+- Downloadable receipts with payment history
 
-### QR Code Payments
-- UPI payment integration
-- Dynamic QR code generation
-- Real-time payment verification
+### Enhanced CORS Support
+- Configurable origin allowlist
+- Development and production modes
+- Credential support
+- Preflight request handling
 
 ## 🔒 Security Features
 
 - JWT-based authentication
 - Role-based access control
 - Input validation with Joi
+- Conditional validation based on payment modes
 - Rate limiting
 - CORS protection
 - Helmet security headers
@@ -259,13 +302,34 @@ The API can be tested using:
 ### Environment Variables (Production)
 ```env
 NODE_ENV=production
-PORT=3000
+PORT=5000
 MONGODB_URI=mongodb://your-production-db
 JWT_SECRET=your-super-secure-secret
 EMAIL_HOST=your-email-service
 EMAIL_USER=your-email
 EMAIL_PASSWORD=your-password
 ```
+
+## 🔄 Recent Updates (v1.1.0)
+
+### New Features
+- **QR Code for Houses**: Generate QR codes without bill ID
+- **Final View Bill**: Complete post-payment bill view
+- **Enhanced Payment Processing**: Conditional transaction ID validation
+- **Full GP Data**: All endpoints return complete Gram Panchayat information
+
+### Improvements
+- **Transaction ID Handling**: Optional for Cash and Pay Later modes
+- **Field Mapping**: Frontend-compatible field names (billAmount → amount)
+- **CORS Configuration**: Enhanced cross-origin support
+- **Paid Date Tracking**: Automatic insertion when payments processed
+- **Error Handling**: Improved validation and error messages
+
+### Bug Fixes
+- Fixed paidDate registration in database
+- Resolved CORS errors across APIs
+- Enhanced field validation for all payment modes
+- Improved bill generation validation
 
 ## 🤝 Contributing
 
@@ -281,7 +345,7 @@ This project is licensed under the MIT License.
 
 ## 🆘 Support
 
-For support and questions:
+For support and questions about this release:
 1. Check the API documentation at `/api/docs`
 2. Review the health check at `/health`
 3. Check server logs for error details
@@ -289,12 +353,13 @@ For support and questions:
 
 ## 🔄 Version History
 
+- **v1.1.0**: Enhanced payment processing, QR code improvements, CORS fixes
 - **v1.0.0**: Initial release with full water management features
-- Complete authentication system
-- Super admin and GP admin portals
-- Bill generation and payment processing
-- Excel import/export functionality
-- PDF generation and QR code payments
+  - Complete authentication system
+  - Super admin and GP admin portals
+  - Bill generation and payment processing
+  - Excel import/export functionality
+  - PDF generation and QR code payments
 
 ---
 

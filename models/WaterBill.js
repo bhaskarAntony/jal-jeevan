@@ -71,7 +71,7 @@ const waterBillSchema = new mongoose.Schema({
   paymentMode: {
     type: String,
     enum: ['cash', 'upi', 'online', 'pay_later'],
-    default: "cash"
+    default: null
   },
   transactionId: {
     type: String,
@@ -93,7 +93,6 @@ const waterBillSchema = new mongoose.Schema({
 waterBillSchema.pre('save', async function(next) {
   if (!this.billNumber) {
     try {
-      // Get the count of existing bills to generate unique bill number
       const count = await this.constructor.countDocuments();
       this.billNumber = `WB${String(count + 1).padStart(6, '0')}`;
     } catch (error) {
@@ -102,5 +101,23 @@ waterBillSchema.pre('save', async function(next) {
   }
   next();
 });
+
+// Transform output to match frontend requirements
+waterBillSchema.methods.toJSON = function() {
+  const bill = this.toObject();
+  
+  // Map fields to frontend requirements
+  return {
+    ...bill,
+    amount: bill.totalAmount,
+    billAmount: bill.totalAmount,
+    paid: bill.paidAmount,
+    remaining: bill.remainingAmount,
+    demand: bill.currentDemand,
+    usage: bill.totalUsage,
+    previous: bill.previousReading,
+    current: bill.currentReading
+  };
+};
 
 module.exports = mongoose.model('WaterBill', waterBillSchema);
