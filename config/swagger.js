@@ -12,8 +12,8 @@ const options = {
       {
         // url: `http://localhost:${process.env.PORT || 3000}`,
         // url: `http://localhost:${process.env.PORT || 3000}`,
-        url: `http://jal-jeevan.onrender.com`,
-        description: 'Development server',
+        url: `https://jal-jeevan-z1fr.onrender.com`,
+        description: 'Production server',
       },
     ],
     components: {
