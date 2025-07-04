@@ -13,7 +13,7 @@ const {
   getFinalViewBill,
   processPayment,
   generatePaymentQRCode,
-  generateHouseQRCode,
+  generateGPQRCode,
   downloadBillPDF,
   downloadFinalBillReceipt,
   getBillerProfile
@@ -173,7 +173,7 @@ router.get('/villages', getVillages);
  * @swagger
  * /api/biller/houses:
  *   post:
- *     summary: Create new house
+ *     summary: Create new house (sequenceNumber auto-generated)
  *     tags: [Biller]
  *     security:
  *       - bearerAuth: []
@@ -190,12 +190,15 @@ router.get('/villages', getVillages);
  *               - mobileNumber
  *               - address
  *               - waterMeterNumber
- *               - sequenceNumber
  *               - usageType
  *               - propertyNumber
  *             properties:
  *               village:
  *                 type: string
+ *                 description: Village ID (can also use villageId)
+ *               villageId:
+ *                 type: string
+ *                 description: Alternative field name for village ID
  *               ownerName:
  *                 type: string
  *               aadhaarNumber:
@@ -208,8 +211,7 @@ router.get('/villages', getVillages);
  *                 type: string
  *               previousMeterReading:
  *                 type: number
- *               sequenceNumber:
- *                 type: string
+ *                 default: 0
  *               usageType:
  *                 type: string
  *                 enum: [residential, commercial, institutional, industrial]
@@ -219,7 +221,7 @@ router.get('/villages', getVillages);
  *       201:
  *         description: House created successfully
  */
-router.post('/houses', validate(schemas.createHouse), createHouse);
+router.post('/houses', createHouse);
 
 /**
  * @swagger
@@ -275,32 +277,19 @@ router.post('/houses/:houseId/generate-bill', validate(schemas.generateBill), ge
 
 /**
  * @swagger
- * /api/biller/houses/{houseId}/qr-code:
+ * /api/biller/gp-qr-code:
  *   get:
- *     summary: Generate QR code for house (without bill ID)
+ *     summary: Generate static QR code for Gram Panchayat (one QR for all houses)
  *     tags: [Biller]
  *     security:
  *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: houseId
- *         required: true
- *         schema:
- *           type: string
- *       - in: query
- *         name: amount
- *         schema:
- *           type: number
- *         description: Amount for QR code (default 100)
  *     responses:
  *       200:
- *         description: QR code generated successfully
+ *         description: Static QR code generated successfully
  *       400:
  *         description: UPI details not configured
- *       404:
- *         description: House not found
  */
-router.get('/houses/:houseId/qr-code', generateHouseQRCode);
+router.get('/gp-qr-code', generateGPQRCode);
 
 /**
  * @swagger
@@ -372,7 +361,7 @@ router.get('/final-view-bill/:billId/print', downloadFinalBillReceipt);
  * @swagger
  * /api/biller/bills/{billId}/payment:
  *   post:
- *     summary: Process payment for bill
+ *     summary: Process payment for bill (allows overpayment)
  *     tags: [Biller]
  *     security:
  *       - bearerAuth: []
@@ -398,29 +387,29 @@ router.get('/final-view-bill/:billId/print', downloadFinalBillReceipt);
  */
 router.post('/bills/:billId/payment', validate(schemas.makePayment), processPayment);
 
-/**
- * @swagger
- * /api/biller/bills/{billId}/qr-code:
- *   get:
- *     summary: Generate payment QR code for bill
- *     tags: [Biller]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: billId
- *         required: true
- *         schema:
- *           type: string
- *     responses:
- *       200:
- *         description: QR code generated successfully
- *       400:
- *         description: UPI details not configured
- *       404:
- *         description: Bill not found
- */
-router.get('/bills/:billId/qr-code', generatePaymentQRCode);
+// /**
+//  * @swagger
+//  * /api/biller/bills/{billId}/qr-code:
+//  *   get:
+//  *     summary: Generate payment QR code for specific bill
+//  *     tags: [Biller]
+//  *     security:
+//  *       - bearerAuth: []
+//  *     parameters:
+//  *       - in: path
+//  *         name: billId
+//  *         required: true
+//  *         schema:
+//  *           type: string
+//  *     responses:
+//  *       200:
+//  *         description: QR code generated successfully
+//  *       400:
+//  *         description: UPI details not configured
+//  *       404:
+//  *         description: Bill not found
+//  */
+// router.get('/bills/:billId/qr-code', generatePaymentQRCode);
 
 /**
  * @swagger

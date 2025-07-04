@@ -2,6 +2,63 @@
 
 All notable changes to the Water Management System will be documented in this file.
 
+## [1.2.0] - 2025-01-15
+
+### 🚀 New Features
+- **Static GP QR Code**: Added endpoint for generating static QR code for entire Gram Panchayat
+- **Auto-generated Sequence Numbers**: Sequence numbers are now auto-generated for houses
+- **Enhanced Field Mapping**: Added support for both `village` and `villageId` field names
+- **Overpayment Support**: Users can now pay more than the remaining bill amount
+- **Improved Error Handling**: Better validation and error messages across all APIs
+
+### 🔧 Improvements
+- **Removed Sequence Number Requirement**: Sequence numbers are now optional in house creation
+- **Enhanced Amount Rounding**: All amounts are now properly rounded to 2 decimal places
+- **Better Null Handling**: Improved null property handling in final-view-bill endpoint
+- **Field Validation**: Enhanced validation for house creation with flexible field names
+- **Payment Processing**: Improved payment processing with better amount validation
+
+### 🐛 Bug Fixes
+- **Bill Generation**: Fixed paymentMode validation error during bill generation
+- **Final View Bill**: Fixed null property errors in final-view-bill endpoint
+- **Payment Amount**: Fixed "payment amount cannot exceed remaining amount" error
+- **House Creation**: Fixed village ID validation issues
+- **CORS Issues**: Resolved remaining CORS errors across all APIs
+
+### 📚 API Enhancements
+
+#### New Endpoints
+- `GET /api/biller/gp-qr-code` - Generate static QR code for entire GP
+- Enhanced house creation with flexible field mapping
+
+#### Updated Endpoints
+- `POST /api/biller/houses` - Now supports both `village` and `villageId` fields
+- `POST /api/biller/bills/:billId/payment` - Now allows overpayment
+- `GET /api/biller/final-view-bill/:billId` - Enhanced null handling and field mapping
+
+### 🔒 Enhanced Validation
+- **Flexible Field Names**: Support for both `village` and `villageId` in requests
+- **Optional Sequence Numbers**: Sequence numbers are auto-generated if not provided
+- **Better Amount Validation**: Improved validation for payment amounts
+- **Enhanced Error Messages**: More descriptive error messages for validation failures
+
+### 📱 Frontend Compatibility
+- **Dual Field Support**: APIs now support both old and new field naming conventions
+- **Consistent Response Format**: All responses include both `id` and corresponding `Id` fields
+- **Rounded Amounts**: All monetary values are properly rounded to 2 decimal places
+- **Better Error Handling**: Improved error response structure
+
+### 🛠️ Technical Improvements
+- **Auto-generation**: Sequence numbers are automatically generated using timestamp
+- **Null Safety**: Enhanced null checking in all data transformations
+- **Field Mapping**: Consistent field mapping across all endpoints
+- **Validation Enhancement**: Improved Joi validation schemas
+
+### 📖 Documentation
+- **Updated API Documentation**: Enhanced Swagger documentation for all endpoints
+- **Field Mapping Guide**: Documentation for supported field name variations
+- **Error Handling Guide**: Comprehensive error handling documentation
+
 ## [1.1.0] - 2024-01-15
 
 ### 🚀 New Features
@@ -23,41 +80,6 @@ All notable changes to the Water Management System will be documented in this fi
 - **CORS Errors**: Fixed cross-origin resource sharing issues
 - **Field Validation**: Enhanced validation for all payment modes
 
-### 📚 API Enhancements
-
-#### New Endpoints
-- `GET /api/biller/houses/:houseId/qr-code` - Generate QR code for house linking
-- `GET /api/biller/final-view-bill/:billId` - Complete post-payment bill view
-- `GET /api/biller/final-view-bill/:billId/print` - Download receipt PDF
-
-#### Updated Endpoints
-- `POST /api/biller/bills/:billId/payment` - Enhanced payment processing
-- `GET /api/biller/dashboard` - Returns full GP data
-- `GET /api/biller/villages` - Includes GP information
-- `GET /api/biller/bills/:billId` - Enhanced with GP details
-
-### 🔒 Security & Validation
-- **Payment Mode Validation**: Conditional validation based on payment type
-- **Transaction ID**: Required only for UPI and online payments
-- **Enhanced CORS**: Improved cross-origin security
-- **Input Validation**: Strengthened validation for all endpoints
-
-### 📱 Frontend Compatibility
-- **Field Mapping**: Added multiple field aliases for frontend compatibility
-- **Response Format**: Standardized response format across all endpoints
-- **Error Messages**: Improved error message clarity
-
-### 🛠️ Technical Improvements
-- **Database Schema**: Enhanced WaterBill model with better field mapping
-- **PDF Generation**: Improved PDF layout with GP details
-- **QR Code**: Enhanced QR code generation with better error handling
-- **Middleware**: Updated validation middleware for conditional requirements
-
-### 📖 Documentation
-- **API Documentation**: Updated Swagger documentation for all endpoints
-- **README**: Enhanced with complete setup and usage instructions
-- **Changelog**: Added comprehensive change tracking
-
 ## [1.0.0] - 2024-01-01
 
 ### 🎉 Initial Release
@@ -73,34 +95,33 @@ All notable changes to the Water Management System will be documented in this fi
 - **Excel Import**: Bulk house data import from Excel
 - **Swagger Documentation**: Complete API documentation
 
-### 🏗️ Core Features
-- **Multi-tenant Architecture**: Support for multiple Gram Panchayats
-- **Tariff Management**: Configurable water tariff rates
-- **Payment Tracking**: Complete payment history and tracking
-- **Search Functionality**: Advanced search across multiple criteria
-- **Responsive Design**: Mobile-friendly interface
-- **Security**: Role-based access control and data validation
-
 ---
 
 ## 🔄 Migration Guide
 
-### From v1.0.0 to v1.1.0
+### From v1.1.0 to v1.2.0
 
-1. **Database Updates**: No schema changes required
-2. **API Changes**: New optional fields in payment requests
-3. **Frontend Updates**: Update field mappings for new aliases
-4. **CORS Configuration**: Update allowed origins if needed
+1. **API Changes**: 
+   - House creation now supports both `village` and `villageId` fields
+   - Sequence numbers are now optional and auto-generated
+   - Payment processing now allows overpayment
+
+2. **Frontend Updates**: 
+   - Update forms to handle auto-generated sequence numbers
+   - Update payment validation to allow overpayment
+   - Use new static GP QR code endpoint if needed
+
+3. **Database**: No schema changes required
 
 ### Breaking Changes
-- None in this release
+- None in this release (backward compatible)
 
 ### Deprecated Features
-- None in this release
+- Manual sequence number entry (still supported but optional)
 
 ---
 
-## 🚀 Upcoming Features (v1.2.0)
+## 🚀 Upcoming Features (v1.3.0)
 
 - **SMS Notifications**: Automated SMS for bill generation and payments
 - **Email Reports**: Automated email reports for administrators

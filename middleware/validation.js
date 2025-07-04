@@ -71,17 +71,18 @@ const schemas = {
   }),
 
   createHouse: Joi.object({
-    village: Joi.string().pattern(/^[0-9a-fA-F]{24}$/).required(),
+    village: Joi.string().pattern(/^[0-9a-fA-F]{24}$/).optional(),
+    villageId: Joi.string().pattern(/^[0-9a-fA-F]{24}$/).optional(),
     ownerName: Joi.string().required(),
     aadhaarNumber: Joi.string().required(),
     mobileNumber: Joi.string().required(),
     address: Joi.string().required(),
     waterMeterNumber: Joi.string().required(),
     previousMeterReading: Joi.number().min(0).default(0),
-    sequenceNumber: Joi.string().required(),
+    sequenceNumber: Joi.string().optional(), // Made optional since it's auto-generated
     usageType: Joi.string().valid('residential', 'commercial', 'institutional', 'industrial').required(),
     propertyNumber: Joi.string().required()
-  }),
+  }).or('village', 'villageId'), // At least one of village or villageId must be present
 
   generateBill: Joi.object({
     previousReading: Joi.number().min(0).required(),
@@ -93,7 +94,7 @@ const schemas = {
   }),
 
   makePayment: Joi.object({
-    amount: Joi.number().min(0.01).required(),
+    amount: Joi.number().min(0).required(), // Changed from 0.01 to 0 to allow zero amounts
     paymentMode: Joi.string().valid('cash', 'upi', 'online', 'pay_later').required(),
     transactionId: Joi.when('paymentMode', {
       is: Joi.valid('upi', 'online'),
@@ -104,21 +105,22 @@ const schemas = {
   }),
 
   createHouseAndBill: Joi.object({
-    village: Joi.string().pattern(/^[0-9a-fA-F]{24}$/).required(),
+    village: Joi.string().pattern(/^[0-9a-fA-F]{24}$/).optional(),
+    villageId: Joi.string().pattern(/^[0-9a-fA-F]{24}$/).optional(),
     ownerName: Joi.string().required(),
     aadhaarNumber: Joi.string().required(),
     mobileNumber: Joi.string().required(),
     address: Joi.string().required(),
     waterMeterNumber: Joi.string().required(),
     previousMeterReading: Joi.number().min(0).default(0),
-    sequenceNumber: Joi.string().required(),
+    sequenceNumber: Joi.string().optional(),
     usageType: Joi.string().valid('residential', 'commercial', 'institutional', 'industrial').required(),
     propertyNumber: Joi.string().required(),
     currentReading: Joi.number().min(0).required(),
     month: Joi.string().required(),
     year: Joi.number().integer().min(2020).max(2030).required(),
     dueDate: Joi.date().required()
-  })
+  }).or('village', 'villageId')
 };
 
 module.exports = { validate, schemas };

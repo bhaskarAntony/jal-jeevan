@@ -70,7 +70,7 @@ const waterBillSchema = new mongoose.Schema({
   },
   paymentMode: {
     type: String,
-    enum: ['cash', 'upi', 'online', 'pay_later'],
+    enum: ['cash', 'upi', 'online', 'pay_later', null],
     default: null
   },
   transactionId: {
@@ -102,18 +102,30 @@ waterBillSchema.pre('save', async function(next) {
   next();
 });
 
-// Transform output to match frontend requirements
+// Transform output to match frontend requirements with proper rounding
 waterBillSchema.methods.toJSON = function() {
   const bill = this.toObject();
   
-  // Map fields to frontend requirements
+  // Round all amounts to 2 decimal places
+  const roundToTwo = (num) => Math.round((num + Number.EPSILON) * 100) / 100;
+  
   return {
     ...bill,
-    amount: bill.totalAmount,
-    billAmount: bill.totalAmount,
-    paid: bill.paidAmount,
-    remaining: bill.remainingAmount,
-    demand: bill.currentDemand,
+    // Original fields
+    totalAmount: roundToTwo(bill.totalAmount),
+    paidAmount: roundToTwo(bill.paidAmount),
+    remainingAmount: roundToTwo(bill.remainingAmount),
+    currentDemand: roundToTwo(bill.currentDemand),
+    arrears: roundToTwo(bill.arrears),
+    interest: roundToTwo(bill.interest),
+    others: roundToTwo(bill.others),
+    
+    // Frontend aliases
+    amount: roundToTwo(bill.totalAmount),
+    billAmount: roundToTwo(bill.totalAmount),
+    paid: roundToTwo(bill.paidAmount),
+    remaining: roundToTwo(bill.remainingAmount),
+    demand: roundToTwo(bill.currentDemand),
     usage: bill.totalUsage,
     previous: bill.previousReading,
     current: bill.currentReading

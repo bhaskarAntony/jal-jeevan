@@ -2,7 +2,13 @@ const QRCode = require('qrcode');
 
 const generatePaymentQR = async (amount, upiId, merchantName, billNumber) => {
   try {
-    const upiString = `upi://pay?pa=${upiId}&pn=${merchantName}&am=${amount}&cu=INR&tn=Bill Payment ${billNumber}`;
+    // For static QR (amount = 0), don't include amount in UPI string
+    let upiString;
+    if (amount > 0) {
+      upiString = `upi://pay?pa=${upiId}&pn=${merchantName}&am=${amount}&cu=INR&tn=Bill Payment ${billNumber}`;
+    } else {
+      upiString = `upi://pay?pa=${upiId}&pn=${merchantName}&cu=INR&tn=Payment to ${merchantName}`;
+    }
     
     const qrCodeDataURL = await QRCode.toDataURL(upiString, {
       width: 256,

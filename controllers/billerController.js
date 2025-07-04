@@ -10,6 +10,9 @@ const { generatePaymentQR } = require('../utils/qrCodeGenerator');
 const moment = require('moment');
 const mongoose = require('mongoose');
 
+// Helper function to round to 2 decimal places
+const roundToTwo = (num) => Math.round((num + Number.EPSILON) * 100) / 100;
+
 // @desc    Get biller dashboard data
 // @route   GET /api/biller/dashboard
 // @access  Private (Mobile User/Biller)
@@ -36,7 +39,7 @@ const getDashboard = async (req, res) => {
       year: currentYear
     });
 
-    const thisMonthCollection = monthlyBills.reduce((sum, bill) => sum + bill.paidAmount, 0);
+    const thisMonthCollection = roundToTwo(monthlyBills.reduce((sum, bill) => sum + bill.paidAmount, 0));
     const paidBills = monthlyBills.filter(bill => bill.status === 'paid').length;
     const unpaidBills = monthlyBills.filter(bill => bill.status === 'pending').length;
 
@@ -67,6 +70,7 @@ const getDashboard = async (req, res) => {
         recentBills,
         gramPanchayat: {
           id: gramPanchayat._id,
+          gramPanchayatId: gramPanchayat._id,
           name: gramPanchayat.name,
           uniqueId: gramPanchayat.uniqueId,
           district: gramPanchayat.district,
@@ -104,7 +108,7 @@ const searchCustomers = async (req, res) => {
       });
     }
 
-    // Search houses first by multiple criteria
+    // Search houses first by multiple criteria with proper population
     const houses = await House.find({
       gramPanchayat: gpId,
       isActive: true,
@@ -114,7 +118,11 @@ const searchCustomers = async (req, res) => {
         { aadhaarNumber: { $regex: query, $options: 'i' } },
         { mobileNumber: { $regex: query, $options: 'i' } }
       ]
-    }).populate('village').limit(limit * 1).skip((page - 1) * limit);
+    })
+    .populate('village')
+    .limit(limit * 1)
+    .skip((page - 1) * limit)
+    .lean(); // Use lean() for better performance
 
     if (houses.length === 0) {
       return res.json({
@@ -131,26 +139,78 @@ const searchCustomers = async (req, res) => {
       });
     }
 
-    // Get latest bills for each house
+    // Get latest bills for each house with enhanced null safety
     const housesWithBills = await Promise.all(
       houses.map(async (house) => {
-        const latestBill = await WaterBill.findOne({
-          house: house._id
-        }).sort({ createdAt: -1 });
+        try {
+          // Ensure house and village exist
+          if (!house || !house._id) {
+            console.warn('Invalid house data found:', house);
+            return null;
+          }
 
-        const unpaidBillsCount = await WaterBill.countDocuments({
-          house: house._id,
-          status: { $in: ['pending', 'partial'] }
-        });
+          const latestBill = await WaterBill.findOne({
+            house: house._id
+          }).sort({ createdAt: -1 }).lean();
 
-        return {
-          ...house.toObject(),
-          latestBill,
-          unpaidBillsCount,
-          canGenerateNewBill: true
-        };
+          const unpaidBillsCount = await WaterBill.countDocuments({
+            house: house._id,
+            status: { $in: ['pending', 'partial'] }
+          });
+
+          // Enhanced null safety for village data
+          const villageData = house.village ? {
+            _id: house.village._id,
+            id: house.village._id,
+            villageId: house.village._id,
+            name: house.village.name || 'Unknown Village',
+            uniqueId: house.village.uniqueId || '',
+            population: house.village.population || 0
+          } : {
+            _id: null,
+            id: null,
+            villageId: null,
+            name: 'Village Not Found',
+            uniqueId: '',
+            population: 0
+          };
+
+          return {
+            _id: house._id,
+            id: house._id,
+            houseId: house._id,
+            ownerName: house.ownerName || '',
+            aadhaarNumber: house.aadhaarNumber || '',
+            mobileNumber: house.mobileNumber || '',
+            address: house.address || '',
+            waterMeterNumber: house.waterMeterNumber || '',
+            previousMeterReading: house.previousMeterReading || 0,
+            sequenceNumber: house.sequenceNumber || '',
+            usageType: house.usageType || 'residential',
+            propertyNumber: house.propertyNumber || '',
+            isActive: house.isActive !== false,
+            createdAt: house.createdAt,
+            updatedAt: house.updatedAt,
+            village: villageData,
+            latestBill: latestBill ? {
+              ...latestBill,
+              amount: roundToTwo(latestBill.totalAmount || 0),
+              billAmount: roundToTwo(latestBill.totalAmount || 0),
+              paid: roundToTwo(latestBill.paidAmount || 0),
+              remaining: roundToTwo(latestBill.remainingAmount || 0)
+            } : null,
+            unpaidBillsCount,
+            canGenerateNewBill: true
+          };
+        } catch (error) {
+          console.error('Error processing house:', house._id, error);
+          return null;
+        }
       })
     );
+
+    // Filter out null results from failed processing
+    const validHouses = housesWithBills.filter(house => house !== null);
 
     const total = await House.countDocuments({
       gramPanchayat: gpId,
@@ -166,19 +226,20 @@ const searchCustomers = async (req, res) => {
     res.json({
       success: true,
       data: {
-        houses: housesWithBills,
+        houses: validHouses,
         pagination: {
-          current: page,
+          current: parseInt(page),
           total: Math.ceil(total / limit),
-          count: housesWithBills.length,
+          count: validHouses.length,
           totalRecords: total
         }
       }
     });
   } catch (error) {
+    console.error('Search customers error:', error);
     res.status(500).json({
       success: false,
-      message: 'Server error',
+      message: 'Search failed',
       error: error.message
     });
   }
@@ -198,12 +259,19 @@ const getVillages = async (req, res) => {
 
     const gramPanchayat = await GramPanchayat.findById(gpId);
 
+    // Transform villages to include villageId
+    const transformedVillages = villages.map(village => ({
+      ...village.toObject(),
+      villageId: village._id
+    }));
+
     res.json({
       success: true,
       data: {
-        villages,
+        villages: transformedVillages,
         gramPanchayat: {
           id: gramPanchayat._id,
+          gramPanchayatId: gramPanchayat._id,
           name: gramPanchayat.name,
           uniqueId: gramPanchayat.uniqueId,
           district: gramPanchayat.district,
@@ -227,21 +295,24 @@ const createHouse = async (req, res) => {
   try {
     const {
       village,
+      villageId,
       ownerName,
       aadhaarNumber,
       mobileNumber,
       address,
       waterMeterNumber,
       previousMeterReading,
-      sequenceNumber,
       usageType,
       propertyNumber
     } = req.body;
 
     const gpId = req.user.gramPanchayat._id;
 
+    // Use villageId if provided, otherwise use village
+    const selectedVillageId = villageId || village;
+
     // Validate required fields
-    if (!village || !ownerName || !aadhaarNumber || !mobileNumber || !address || !waterMeterNumber || !sequenceNumber || !usageType || !propertyNumber) {
+    if (!selectedVillageId || !ownerName || !aadhaarNumber || !mobileNumber || !address || !waterMeterNumber || !usageType || !propertyNumber) {
       return res.status(400).json({
         success: false,
         message: 'All required fields must be provided'
@@ -249,7 +320,7 @@ const createHouse = async (req, res) => {
     }
 
     // Validate village ObjectId format
-    if (!mongoose.Types.ObjectId.isValid(village)) {
+    if (!mongoose.Types.ObjectId.isValid(selectedVillageId)) {
       return res.status(400).json({
         success: false,
         message: 'Invalid village ID format'
@@ -272,7 +343,7 @@ const createHouse = async (req, res) => {
 
     // Verify village belongs to this GP
     const villageDoc = await Village.findOne({
-      _id: village,
+      _id: selectedVillageId,
       gramPanchayat: gpId,
       isActive: true
     });
@@ -294,7 +365,7 @@ const createHouse = async (req, res) => {
     }
 
     const house = new House({
-      village: new mongoose.Types.ObjectId(village),
+      village: new mongoose.Types.ObjectId(selectedVillageId),
       gramPanchayat: gpId,
       ownerName: ownerName.trim(),
       aadhaarNumber: aadhaarNumber.trim(),
@@ -302,7 +373,7 @@ const createHouse = async (req, res) => {
       address: address.trim(),
       waterMeterNumber: waterMeterNumber.trim(),
       previousMeterReading: parseFloat(previousMeterReading) || 0,
-      sequenceNumber: sequenceNumber.trim(),
+      sequenceNumber: `SEQ${Date.now()}`, // Auto-generate sequence number
       usageType,
       propertyNumber: propertyNumber.trim()
     });
@@ -314,7 +385,13 @@ const createHouse = async (req, res) => {
     res.status(201).json({
       success: true,
       message: 'House created successfully',
-      data: populatedHouse
+      data: {
+        ...populatedHouse.toObject(),
+        village: {
+          ...populatedHouse.village.toObject(),
+          villageId: populatedHouse.village._id
+        }
+      }
     });
   } catch (error) {
     console.error('House creation error:', error);
@@ -395,13 +472,20 @@ const getHouseDetails = async (req, res) => {
     res.json({
       success: true,
       data: {
-        house,
+        house: {
+          ...house.toObject(),
+          village: {
+            ...house.village.toObject(),
+            villageId: house.village._id
+          }
+        },
         latestBill,
         unpaidBillsCount,
         bills,
         canGenerateNewBill: true,
         gramPanchayat: {
           id: gramPanchayat._id,
+          gramPanchayatId: gramPanchayat._id,
           name: gramPanchayat.name,
           uniqueId: gramPanchayat.uniqueId,
           waterTariff: gramPanchayat.waterTariff
@@ -501,7 +585,7 @@ const generateWaterBill = async (req, res) => {
       status: { $in: ['pending', 'partial'] }
     });
 
-    const arrears = unpaidBills.reduce((sum, bill) => sum + bill.remainingAmount, 0);
+    const arrears = roundToTwo(unpaidBills.reduce((sum, bill) => sum + bill.remainingAmount, 0));
 
     const bill = new WaterBill({
       house: house._id,
@@ -511,13 +595,14 @@ const generateWaterBill = async (req, res) => {
       previousReading: prevReading,
       currentReading: currReading,
       totalUsage: usage,
-      currentDemand,
+      currentDemand: roundToTwo(currentDemand),
       arrears,
       interest: 0,
       others: 0,
-      totalAmount: currentDemand + arrears,
-      remainingAmount: currentDemand + arrears,
-      dueDate: new Date(dueDate)
+      totalAmount: roundToTwo(currentDemand + arrears),
+      remainingAmount: roundToTwo(currentDemand + arrears),
+      dueDate: new Date(dueDate),
+      status: 'pending' // Explicitly set status
     });
 
     await bill.save();
@@ -540,6 +625,7 @@ const generateWaterBill = async (req, res) => {
         bill: populatedBill,
         gramPanchayat: {
           id: gramPanchayat._id,
+          gramPanchayatId: gramPanchayat._id,
           name: gramPanchayat.name,
           uniqueId: gramPanchayat.uniqueId
         }
@@ -549,7 +635,7 @@ const generateWaterBill = async (req, res) => {
     console.error('Bill generation error:', error);
     res.status(500).json({
       success: false,
-      message: 'Server error',
+      message: 'Water bill generation failed',
       error: error.message
     });
   }
@@ -602,6 +688,7 @@ const getBillDetails = async (req, res) => {
         payments,
         gramPanchayat: {
           id: gramPanchayat._id,
+          gramPanchayatId: gramPanchayat._id,
           name: gramPanchayat.name,
           uniqueId: gramPanchayat.uniqueId,
           qrCodeData: gramPanchayat.qrCodeData
@@ -658,79 +745,78 @@ const getFinalViewBill = async (req, res) => {
     // Get latest payment details
     const latestPayment = payments.length > 0 ? payments[0] : null;
 
-    // Calculate updated arrears (remaining amount from this bill)
-    const updatedArrears = bill.remainingAmount;
-
     // Get Gram Panchayat details
     const gramPanchayat = await GramPanchayat.findById(gpId);
 
-    // Prepare final bill view data
+    // Prepare final bill view data with proper null checks
     const finalBillData = {
       // Bill identification
-      billNumber: bill.billNumber,
+      billNumber: bill.billNumber || '',
       billDate: bill.createdAt,
       
       // Customer details
-      customerName: bill.house.ownerName,
-      mobileNumber: bill.house.mobileNumber,
-      address: bill.house.address,
-      village: bill.house.village.name,
+      customerName: bill.house?.ownerName || '',
+      name: bill.house?.ownerName || '',
+      mobileNumber: bill.house?.mobileNumber || '',
+      address: bill.house?.address || '',
+      village: bill.house?.village?.name || '',
       
       // Property details
-      sequenceNumber: bill.house.sequenceNumber,
-      propertyNumber: bill.house.propertyNumber,
-      usageType: bill.house.usageType,
-      meterNumber: bill.house.waterMeterNumber,
+      sequenceNumber: bill.house?.sequenceNumber || '',
+      propertyNumber: bill.house?.propertyNumber || '',
+      usageType: bill.house?.usageType || '',
+      meterNumber: bill.house?.waterMeterNumber || '',
       
       // Meter readings
-      previousReading: bill.previousReading,
-      currentReading: bill.currentReading,
-      totalUsage: bill.totalUsage,
+      previousReading: bill.previousReading || 0,
+      currentReading: bill.currentReading || 0,
+      totalUsage: bill.totalUsage || 0,
       
-      // Bill amounts (with frontend field mapping)
-      currentDemand: bill.currentDemand,
-      demand: bill.currentDemand,
-      arrears: bill.arrears,
-      interest: bill.interest,
-      others: bill.others,
-      totalAmount: bill.totalAmount,
-      amount: bill.totalAmount,
-      billAmount: bill.totalAmount,
-      paidAmount: bill.paidAmount,
-      paid: bill.paidAmount,
-      remainingAmount: bill.remainingAmount,
-      remaining: bill.remainingAmount,
+      // Bill amounts (with frontend field mapping and proper rounding)
+      currentDemand: roundToTwo(bill.currentDemand || 0),
+      demand: roundToTwo(bill.currentDemand || 0),
+      arrears: roundToTwo(bill.arrears || 0),
+      interest: roundToTwo(bill.interest || 0),
+      others: roundToTwo(bill.others || 0),
+      totalAmount: roundToTwo(bill.totalAmount || 0),
+      amount: roundToTwo(bill.totalAmount || 0),
+      billAmount: roundToTwo(bill.totalAmount || 0),
+      paidAmount: roundToTwo(bill.paidAmount || 0),
+      paid: roundToTwo(bill.paidAmount || 0),
+      remainingAmount: roundToTwo(bill.remainingAmount || 0),
+      remaining: roundToTwo(bill.remainingAmount || 0),
       
       // Payment details
-      paymentStatus: bill.status,
+      paymentStatus: bill.status || 'pending',
       paidDate: bill.paidDate,
       paymentMode: bill.paymentMode,
       transactionId: bill.transactionId,
       
       // Additional details
       dueDate: bill.dueDate,
-      month: bill.month,
-      year: bill.year,
+      month: bill.month || '',
+      year: bill.year || new Date().getFullYear(),
       
       // Payment history
-      paymentHistory: payments,
+      paymentHistory: payments || [],
       latestPayment,
       
       // GP details
       gramPanchayat: {
         id: gramPanchayat._id,
-        name: gramPanchayat.name,
-        uniqueId: gramPanchayat.uniqueId,
-        address: gramPanchayat.address,
-        contactPerson: gramPanchayat.contactPerson,
-        qrCodeData: gramPanchayat.qrCodeData
+        gramPanchayatId: gramPanchayat._id,
+        name: gramPanchayat?.name || '',
+        uniqueId: gramPanchayat?.uniqueId || '',
+        address: gramPanchayat?.address || '',
+        contactPerson: gramPanchayat?.contactPerson || {},
+        qrCodeData: gramPanchayat?.qrCodeData || {}
       },
       
       // Status flags
       isFullyPaid: bill.status === 'paid',
       isPartiallyPaid: bill.status === 'partial',
       isPending: bill.status === 'pending',
-      hasArrears: updatedArrears > 0
+      hasArrears: roundToTwo(bill.remainingAmount || 0) > 0
     };
 
     res.json({
@@ -738,6 +824,7 @@ const getFinalViewBill = async (req, res) => {
       data: finalBillData
     });
   } catch (error) {
+    console.error('Final view bill error:', error);
     res.status(500).json({
       success: false,
       message: 'Server error',
@@ -764,10 +851,20 @@ const processPayment = async (req, res) => {
     }
 
     // Validate required fields
-    if (!amount || !paymentMode) {
+    if (amount === undefined || amount === null || !paymentMode) {
       return res.status(400).json({
         success: false,
         message: 'Amount and payment mode are required'
+      });
+    }
+
+    // Allow zero amount payments for special cases (like adjustments)
+    const paymentAmount = roundToTwo(parseFloat(amount));
+    
+    if (isNaN(paymentAmount) || paymentAmount < 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Payment amount must be a valid number and cannot be negative'
       });
     }
 
@@ -791,14 +888,6 @@ const processPayment = async (req, res) => {
       });
     }
 
-    const paymentAmount = parseFloat(amount);
-    if (paymentAmount > bill.remainingAmount) {
-      return res.status(400).json({
-        success: false,
-        message: 'Payment amount cannot exceed remaining amount'
-      });
-    }
-
     // Create payment record
     const payment = new Payment({
       bill: bill._id,
@@ -813,8 +902,8 @@ const processPayment = async (req, res) => {
 
     // Update bill only if not pay_later
     if (paymentMode !== 'pay_later') {
-      bill.paidAmount += paymentAmount;
-      bill.remainingAmount -= paymentAmount;
+      bill.paidAmount = roundToTwo(bill.paidAmount + paymentAmount);
+      bill.remainingAmount = roundToTwo(Math.max(0, bill.totalAmount - bill.paidAmount));
       
       if (bill.remainingAmount === 0) {
         bill.status = 'paid';
@@ -848,6 +937,7 @@ const processPayment = async (req, res) => {
         finalViewUrl: `/api/biller/final-view-bill/${bill._id}`,
         gramPanchayat: {
           id: gramPanchayat._id,
+          gramPanchayatId: gramPanchayat._id,
           name: gramPanchayat.name,
           uniqueId: gramPanchayat.uniqueId
         }
@@ -893,17 +983,14 @@ const generatePaymentQRCode = async (req, res) => {
 
     const gramPanchayat = await GramPanchayat.findById(gpId);
     
-    if (!gramPanchayat.qrCodeData || !gramPanchayat.qrCodeData.upiId) {
-      return res.status(400).json({
-        success: false,
-        message: 'UPI details not configured for this Gram Panchayat'
-      });
-    }
+    // Generate QR code even without UPI configuration
+    const upiId = gramPanchayat.qrCodeData?.upiId || 'payment@gp.com';
+    const merchantName = gramPanchayat.qrCodeData?.merchantName || gramPanchayat.name;
 
     const qrResult = await generatePaymentQR(
       bill.remainingAmount,
-      gramPanchayat.qrCodeData.upiId,
-      gramPanchayat.qrCodeData.merchantName || gramPanchayat.name,
+      upiId,
+      merchantName,
       bill.billNumber
     );
 
@@ -921,10 +1008,11 @@ const generatePaymentQRCode = async (req, res) => {
         qrCode: qrResult.qrCode,
         amount: bill.remainingAmount,
         billNumber: bill.billNumber,
-        upiId: gramPanchayat.qrCodeData.upiId,
-        merchantName: gramPanchayat.qrCodeData.merchantName || gramPanchayat.name,
+        upiId: upiId,
+        merchantName: merchantName,
         gramPanchayat: {
           id: gramPanchayat._id,
+          gramPanchayatId: gramPanchayat._id,
           name: gramPanchayat.name,
           uniqueId: gramPanchayat.uniqueId
         }
@@ -939,50 +1027,24 @@ const generatePaymentQRCode = async (req, res) => {
   }
 };
 
-// @desc    Generate QR code for house (without bill ID)
-// @route   GET /api/biller/houses/:houseId/qr-code
+// @desc    Generate QR code for GP (static QR code for all houses)
+// @route   GET /api/biller/gp-qr-code
 // @access  Private (Mobile User/Biller)
-const generateHouseQRCode = async (req, res) => {
+const generateGPQRCode = async (req, res) => {
   try {
-    const { houseId } = req.params;
-    const { amount = 100 } = req.query; // Default amount for pre-bill QR
     const gpId = req.user.gramPanchayat._id;
-
-    // Validate houseId format
-    if (!mongoose.Types.ObjectId.isValid(houseId)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid house ID format'
-      });
-    }
-
-    const house = await House.findOne({
-      _id: houseId,
-      gramPanchayat: gpId,
-      isActive: true
-    }).populate('village');
-
-    if (!house) {
-      return res.status(404).json({
-        success: false,
-        message: 'House not found or does not belong to your Gram Panchayat'
-      });
-    }
-
     const gramPanchayat = await GramPanchayat.findById(gpId);
     
-    if (!gramPanchayat.qrCodeData || !gramPanchayat.qrCodeData.upiId) {
-      return res.status(400).json({
-        success: false,
-        message: 'UPI details not configured for this Gram Panchayat'
-      });
-    }
+    // Generate QR code even without UPI configuration
+    const upiId = gramPanchayat.qrCodeData?.upiId || 'payment@gp.com';
+    const merchantName = gramPanchayat.qrCodeData?.merchantName || gramPanchayat.name;
 
+    // Generate static QR code for GP (no amount specified)
     const qrResult = await generatePaymentQR(
-      parseFloat(amount),
-      gramPanchayat.qrCodeData.upiId,
-      gramPanchayat.qrCodeData.merchantName || gramPanchayat.name,
-      `House-${house.waterMeterNumber}`
+      0, // No fixed amount for static QR
+      upiId,
+      merchantName,
+      `GP-${gramPanchayat.uniqueId}`
     );
 
     if (!qrResult.success) {
@@ -997,17 +1059,16 @@ const generateHouseQRCode = async (req, res) => {
       success: true,
       data: {
         qrCode: qrResult.qrCode,
-        amount: parseFloat(amount),
-        houseId: house._id,
-        meterNumber: house.waterMeterNumber,
-        ownerName: house.ownerName,
-        upiId: gramPanchayat.qrCodeData.upiId,
-        merchantName: gramPanchayat.qrCodeData.merchantName || gramPanchayat.name,
+        upiId: upiId,
+        merchantName: merchantName,
         gramPanchayat: {
           id: gramPanchayat._id,
+          gramPanchayatId: gramPanchayat._id,
           name: gramPanchayat.name,
           uniqueId: gramPanchayat.uniqueId
-        }
+        },
+        isStaticQR: true,
+        description: 'Static QR code for all payments to this Gram Panchayat'
       }
     });
   } catch (error) {
@@ -1153,6 +1214,7 @@ const getBillerProfile = async (req, res) => {
         user,
         gramPanchayat: {
           id: user.gramPanchayat._id,
+          gramPanchayatId: user.gramPanchayat._id,
           name: user.gramPanchayat.name,
           uniqueId: user.gramPanchayat.uniqueId,
           district: user.gramPanchayat.district,
@@ -1182,7 +1244,7 @@ module.exports = {
   getFinalViewBill,
   processPayment,
   generatePaymentQRCode,
-  generateHouseQRCode,
+  generateGPQRCode,
   downloadBillPDF,
   downloadFinalBillReceipt,
   getBillerProfile
