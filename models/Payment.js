@@ -21,7 +21,7 @@ const paymentSchema = new mongoose.Schema({
   },
   collectedBy: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
+    ref: 'User32',
     required: true
   },
   remarks: {

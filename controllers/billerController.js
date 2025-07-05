@@ -754,14 +754,14 @@ const getFinalViewBill = async (req, res) => {
       billNumber: bill.billNumber || '',
       billDate: bill.createdAt,
       
-      // Customer details
+      // Customer details with null safety
       customerName: bill.house?.ownerName || '',
       name: bill.house?.ownerName || '',
       mobileNumber: bill.house?.mobileNumber || '',
       address: bill.house?.address || '',
       village: bill.house?.village?.name || '',
       
-      // Property details
+      // Property details with null safety
       sequenceNumber: bill.house?.sequenceNumber || '',
       propertyNumber: bill.house?.propertyNumber || '',
       usageType: bill.house?.usageType || '',
@@ -801,10 +801,10 @@ const getFinalViewBill = async (req, res) => {
       paymentHistory: payments || [],
       latestPayment,
       
-      // GP details
+      // GP details with null safety
       gramPanchayat: {
-        id: gramPanchayat._id,
-        gramPanchayatId: gramPanchayat._id,
+        id: gramPanchayat?._id || null,
+        gramPanchayatId: gramPanchayat?._id || null,
         name: gramPanchayat?.name || '',
         uniqueId: gramPanchayat?.uniqueId || '',
         address: gramPanchayat?.address || '',
@@ -816,7 +816,8 @@ const getFinalViewBill = async (req, res) => {
       isFullyPaid: bill.status === 'paid',
       isPartiallyPaid: bill.status === 'partial',
       isPending: bill.status === 'pending',
-      hasArrears: roundToTwo(bill.remainingAmount || 0) > 0
+      hasArrears: roundToTwo(bill.remainingAmount || 0) > 0,
+      isOverpaid: roundToTwo(bill.remainingAmount || 0) < 0
     };
 
     res.json({
@@ -903,10 +904,12 @@ const processPayment = async (req, res) => {
     // Update bill only if not pay_later
     if (paymentMode !== 'pay_later') {
       bill.paidAmount = roundToTwo(bill.paidAmount + paymentAmount);
-      bill.remainingAmount = roundToTwo(Math.max(0, bill.totalAmount - bill.paidAmount));
+      bill.remainingAmount = roundToTwo(bill.totalAmount - bill.paidAmount);
       
-      if (bill.remainingAmount === 0) {
+      // Handle overpayment scenarios
+      if (bill.remainingAmount <= 0) {
         bill.status = 'paid';
+        // Keep negative remaining amount to track overpayment
       } else if (bill.paidAmount > 0) {
         bill.status = 'partial';
       }
