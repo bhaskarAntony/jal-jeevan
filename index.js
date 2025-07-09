@@ -20,43 +20,43 @@ const app = express();
 connectDB();
 
 // Security Middleware
-app.use(helmet());
+// app.use(helmet());
 
 // CORS Configuration - Allow all origins for development
-app.use(cors({
-  origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) return callback(null, true);
+// app.use(cors({
+//   origin: function (origin, callback) {
+//     // Allow requests with no origin (like mobile apps or curl requests)
+//     if (!origin) return callback(null, true);
     
-    // Allow all origins in development
-    if (process.env.NODE_ENV === 'development') {
-      return callback(null, true);
-    }
+//     // Allow all origins in development
+//     if (process.env.NODE_ENV === 'development') {
+//       return callback(null, true);
+//     }
     
-    // In production, you can specify allowed origins
-    const allowedOrigins = [
-      'http://localhost:3000',
-      'http://localhost:3001',
-      'http://localhost:5173',
-      'http://localhost:8080',
-      'https://jal-jeevan-main.vercel.app'
-      // Add your production domains here
-    ];
+//     // In production, you can specify allowed origins
+//     const allowedOrigins = [
+//       'http://localhost:3000',
+//       'http://localhost:3001',
+//       'http://localhost:5173',
+//       'http://localhost:8080',
+//       'https://jal-jeevan-main.vercel.app'
+//       // Add your production domains here
+//     ];
     
-    if (allowedOrigins.indexOf(origin) !== -1) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-  exposedHeaders: ['Content-Disposition']
-}));
+//     if (allowedOrigins.indexOf(origin) !== -1) {
+//       callback(null, true);
+//     } else {
+//       callback(new Error('Not allowed by CORS'));
+//     }
+//   },
+//   credentials: true,
+//   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+//   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+//   exposedHeaders: ['Content-Disposition']
+// }));
 
 // Handle preflight requests
-app.options('*', cors());
+app.use(cors());
 
 // Rate limiting
 const limiter = rateLimit({
