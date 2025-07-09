@@ -5,12 +5,13 @@ const House = require('../models/House');
 const WaterBill = require('../models/WaterBill');
 const Payment = require('../models/Payment');
 const { calculateWaterBill } = require('../utils/billCalculator');
-const { generateBillPDF } = require('../utils/pdfGenerator');
+const { generateBillPDF, generateReceiptPDF } = require('../utils/pdfGenerator');
 const { generatePaymentQR } = require('../utils/qrCodeGenerator');
 const { processHouseExcel } = require('../utils/excelProcessor');
 const moment = require('moment');
 const mongoose = require('mongoose');
 const fs = require('fs');
+const XLSX = require('xlsx');
 
 // Helper function to round to 2 decimal places
 const roundToTwo = (num) => Math.round((num + Number.EPSILON) * 100) / 100;
@@ -149,7 +150,7 @@ const getVillages = async (req, res) => {
       data: {
         villages: enrichedVillages,
         pagination: {
-          current: page,
+          current: parseInt(page),
           total: Math.ceil(total / limit),
           count: enrichedVillages.length,
           totalRecords: total
@@ -258,7 +259,7 @@ const getVillageDetails = async (req, res) => {
         },
         houses,
         pagination: {
-          current: page,
+          current: parseInt(page),
           total: Math.ceil(total / limit),
           count: houses.length,
           totalRecords: total
@@ -268,6 +269,149 @@ const getVillageDetails = async (req, res) => {
           gramPanchayatId: gramPanchayat._id,
           name: gramPanchayat.name,
           uniqueId: gramPanchayat.uniqueId
+        }
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message
+    });
+  }
+};
+
+// @desc    Update village
+// @route   PUT /api/gp-admin/villages/:id
+// @access  Private (GP Admin)
+const updateVillage = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, uniqueId, population } = req.body;
+    const gpId = req.user.gramPanchayat._id;
+
+    const village = await Village.findOneAndUpdate(
+      { _id: id, gramPanchayat: gpId },
+      { name, uniqueId, population },
+      { new: true, runValidators: true }
+    );
+
+    if (!village) {
+      return res.status(404).json({
+        success: false,
+        message: 'Village not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Village updated successfully',
+      data: village
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message
+    });
+  }
+};
+
+// @desc    Delete village
+// @route   DELETE /api/gp-admin/villages/:id
+// @access  Private (GP Admin)
+const deleteVillage = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const gpId = req.user.gramPanchayat._id;
+
+    const village = await Village.findOneAndUpdate(
+      { _id: id, gramPanchayat: gpId },
+      { isActive: false },
+      { new: true }
+    );
+
+    if (!village) {
+      return res.status(404).json({
+        success: false,
+        message: 'Village not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Village deleted successfully'
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message
+    });
+  }
+};
+
+// @desc    Get all houses for GP
+// @route   GET /api/gp-admin/houses
+// @access  Private (GP Admin)
+const getHouses = async (req, res) => {
+  try {
+    const { page = 1, limit = 10, search = '' } = req.query;
+    const gpId = req.user.gramPanchayat._id;
+
+    const query = search 
+      ? { 
+          gramPanchayat: gpId,
+          isActive: true,
+          $or: [
+            { ownerName: { $regex: search, $options: 'i' } },
+            { waterMeterNumber: { $regex: search, $options: 'i' } },
+            { aadhaarNumber: { $regex: search, $options: 'i' } },
+            { mobileNumber: { $regex: search, $options: 'i' } }
+          ]
+        }
+      : { gramPanchayat: gpId, isActive: true };
+
+    const houses = await House.find(query)
+      .populate('village')
+      .limit(limit * 1)
+      .skip((page - 1) * limit)
+      .sort({ createdAt: -1 });
+
+    // Get unpaid bills count and total due for each house
+    const enrichedHouses = await Promise.all(
+      houses.map(async (house) => {
+        const unpaidBillsCount = await WaterBill.countDocuments({
+          house: house._id,
+          status: { $in: ['pending', 'partial'] }
+        });
+
+        const unpaidBills = await WaterBill.find({
+          house: house._id,
+          status: { $in: ['pending', 'partial'] }
+        });
+
+        const totalDue = roundToTwo(unpaidBills.reduce((sum, bill) => sum + bill.remainingAmount, 0));
+
+        return {
+          ...house.toObject(),
+          unpaidBillsCount,
+          totalDue
+        };
+      })
+    );
+
+    const total = await House.countDocuments(query);
+
+    res.json({
+      success: true,
+      data: {
+        houses: enrichedHouses,
+        pagination: {
+          current: parseInt(page),
+          total: Math.ceil(total / limit),
+          count: enrichedHouses.length,
+          totalRecords: total
         }
       }
     });
@@ -456,6 +600,50 @@ const uploadHousesFromExcel = async (req, res) => {
   }
 };
 
+// @desc    Export houses data
+// @route   GET /api/gp-admin/houses/export
+// @access  Private (GP Admin)
+const exportHousesData = async (req, res) => {
+  try {
+    const gpId = req.user.gramPanchayat._id;
+
+    const houses = await House.find({
+      gramPanchayat: gpId,
+      isActive: true
+    }).populate('village');
+
+    const exportData = houses.map(house => ({
+      'Owner Name': house.ownerName,
+      'Aadhaar Number': house.aadhaarNumber,
+      'Mobile Number': house.mobileNumber,
+      'Address': house.address,
+      'Water Meter Number': house.waterMeterNumber,
+      'Previous Meter Reading': house.previousMeterReading,
+      'Sequence Number': house.sequenceNumber,
+      'Usage Type': house.usageType,
+      'Property Number': house.propertyNumber,
+      'Village': house.village?.name || '',
+      'Created Date': house.createdAt.toLocaleDateString()
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(exportData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Houses');
+
+    const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+
+    res.setHeader('Content-Disposition', 'attachment; filename=houses_export.xlsx');
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.send(buffer);
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message
+    });
+  }
+};
+
 // @desc    Get house details with bills
 // @route   GET /api/gp-admin/houses/:id
 // @access  Private (GP Admin)
@@ -512,6 +700,75 @@ const getHouseDetails = async (req, res) => {
   }
 };
 
+// @desc    Update house
+// @route   PUT /api/gp-admin/houses/:id
+// @access  Private (GP Admin)
+const updateHouse = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const gpId = req.user.gramPanchayat._id;
+
+    const house = await House.findOneAndUpdate(
+      { _id: id, gramPanchayat: gpId },
+      req.body,
+      { new: true, runValidators: true }
+    ).populate('village');
+
+    if (!house) {
+      return res.status(404).json({
+        success: false,
+        message: 'House not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'House updated successfully',
+      data: house
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message
+    });
+  }
+};
+
+// @desc    Delete house
+// @route   DELETE /api/gp-admin/houses/:id
+// @access  Private (GP Admin)
+const deleteHouse = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const gpId = req.user.gramPanchayat._id;
+
+    const house = await House.findOneAndUpdate(
+      { _id: id, gramPanchayat: gpId },
+      { isActive: false },
+      { new: true }
+    );
+
+    if (!house) {
+      return res.status(404).json({
+        success: false,
+        message: 'House not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'House deleted successfully'
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message
+    });
+  }
+};
+
 // @desc    Generate water bill for house
 // @route   POST /api/gp-admin/houses/:id/bills
 // @access  Private (GP Admin)
@@ -536,6 +793,8 @@ const generateWaterBill = async (req, res) => {
 
     const previousReading = house.previousMeterReading;
     const totalUsage = currentReading - previousReading;
+    console.log(house);
+    
 
     if (totalUsage < 0) {
       return res.status(400).json({
@@ -596,6 +855,69 @@ const generateWaterBill = async (req, res) => {
           gramPanchayatId: gramPanchayat._id,
           name: gramPanchayat.name,
           uniqueId: gramPanchayat.uniqueId
+        }
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message
+    });
+  }
+};
+
+// @desc    Get all bills for GP
+// @route   GET /api/gp-admin/bills
+// @access  Private (GP Admin)
+const getBills = async (req, res) => {
+  try {
+    const { page = 1, limit = 10, search = '', status = '' } = req.query;
+    const gpId = req.user.gramPanchayat._id;
+
+    let query = { gramPanchayat: gpId };
+
+    if (search) {
+      const houses = await House.find({
+        gramPanchayat: gpId,
+        $or: [
+          { ownerName: { $regex: search, $options: 'i' } },
+          { waterMeterNumber: { $regex: search, $options: 'i' } }
+        ]
+      }).select('_id');
+
+      query.$or = [
+        { billNumber: { $regex: search, $options: 'i' } },
+        { house: { $in: houses.map(h => h._id) } }
+      ];
+    }
+
+    if (status) {
+      query.status = status;
+    }
+
+    const bills = await WaterBill.find(query)
+      .populate({
+        path: 'house',
+        populate: {
+          path: 'village'
+        }
+      })
+      .limit(limit * 1)
+      .skip((page - 1) * limit)
+      .sort({ createdAt: -1 });
+
+    const total = await WaterBill.countDocuments(query);
+
+    res.json({
+      success: true,
+      data: {
+        bills,
+        pagination: {
+          current: parseInt(page),
+          total: Math.ceil(total / limit),
+          count: bills.length,
+          totalRecords: total
         }
       }
     });
@@ -820,17 +1142,13 @@ const generatePaymentQRCode = async (req, res) => {
 
     const gramPanchayat = await GramPanchayat.findById(gpId);
     
-    if (!gramPanchayat.qrCodeData || !gramPanchayat.qrCodeData.upiId) {
-      return res.status(400).json({
-        success: false,
-        message: 'UPI details not configured for this Gram Panchayat'
-      });
-    }
+    const upiId = gramPanchayat.qrCodeData?.upiId || 'payment@gp.com';
+    const merchantName = gramPanchayat.qrCodeData?.merchantName || gramPanchayat.name;
 
     const qrResult = await generatePaymentQR(
       bill.remainingAmount,
-      gramPanchayat.qrCodeData.upiId,
-      gramPanchayat.qrCodeData.merchantName || gramPanchayat.name,
+      upiId,
+      merchantName,
       bill.billNumber
     );
 
@@ -848,14 +1166,65 @@ const generatePaymentQRCode = async (req, res) => {
         qrCode: qrResult.qrCode,
         amount: bill.remainingAmount,
         billNumber: bill.billNumber,
-        upiId: gramPanchayat.qrCodeData.upiId,
-        merchantName: gramPanchayat.qrCodeData.merchantName || gramPanchayat.name,
+        upiId: upiId,
+        merchantName: merchantName,
         gramPanchayat: {
           id: gramPanchayat._id,
           gramPanchayatId: gramPanchayat._id,
           name: gramPanchayat.name,
           uniqueId: gramPanchayat.uniqueId
         }
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message
+    });
+  }
+};
+
+// @desc    Generate GP QR code
+// @route   GET /api/gp-admin/qr-code
+// @access  Private (GP Admin)
+const generateGPQRCode = async (req, res) => {
+  try {
+    const gpId = req.user.gramPanchayat._id;
+    const gramPanchayat = await GramPanchayat.findById(gpId);
+    
+    const upiId = gramPanchayat.qrCodeData?.upiId || 'payment@gp.com';
+    const merchantName = gramPanchayat.qrCodeData?.merchantName || gramPanchayat.name;
+
+    const qrResult = await generatePaymentQR(
+      0, // Static QR
+      upiId,
+      merchantName,
+      `GP-${gramPanchayat.uniqueId}`
+    );
+
+    if (!qrResult.success) {
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to generate QR code',
+        error: qrResult.error
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        qrCode: qrResult.qrCode,
+        upiId: upiId,
+        merchantName: merchantName,
+        gramPanchayat: {
+          id: gramPanchayat._id,
+          gramPanchayatId: gramPanchayat._id,
+          name: gramPanchayat.name,
+          uniqueId: gramPanchayat.uniqueId
+        },
+        isStaticQR: true,
+        description: 'Static QR code for all payments to this Gram Panchayat'
       }
     });
   } catch (error) {
@@ -913,16 +1282,24 @@ const updateWaterTariff = async (req, res) => {
 // @access  Private (GP Admin)
 const getUsers = async (req, res) => {
   try {
-    const { page = 1, limit = 10, userType = '' } = req.query;
+    const { page = 1, limit = 10, userType = '', search = '' } = req.query;
     const gpId = req.user.gramPanchayat._id;
 
-    const query = {
+    let query = {
       gramPanchayat: gpId,
       isActive: true
     };
 
     if (userType) {
       query.role = userType;
+    }
+
+    if (search) {
+      query.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { email: { $regex: search, $options: 'i' } },
+        { mobile: { $regex: search, $options: 'i' } }
+      ];
     }
 
     const users = await User.find(query)
@@ -939,7 +1316,7 @@ const getUsers = async (req, res) => {
       data: {
         users,
         pagination: {
-          current: page,
+          current: parseInt(page),
           total: Math.ceil(total / limit),
           count: users.length,
           totalRecords: total
@@ -1011,20 +1388,298 @@ const createUser = async (req, res) => {
   }
 };
 
+// @desc    Get user details
+// @route   GET /api/gp-admin/users/:id
+// @access  Private (GP Admin)
+const getUserDetails = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const gpId = req.user.gramPanchayat._id;
+
+    const user = await User.findOne({
+      _id: id,
+      gramPanchayat: gpId
+    }).select('-password');
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: user
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message
+    });
+  }
+};
+
+// @desc    Update user
+// @route   PUT /api/gp-admin/users/:id
+// @access  Private (GP Admin)
+const updateUser = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const gpId = req.user.gramPanchayat._id;
+
+    const user = await User.findOneAndUpdate(
+      { _id: id, gramPanchayat: gpId },
+      req.body,
+      { new: true, runValidators: true }
+    ).select('-password');
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'User updated successfully',
+      data: user
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message
+    });
+  }
+};
+
+// @desc    Delete user
+// @route   DELETE /api/gp-admin/users/:id
+// @access  Private (GP Admin)
+const deleteUser = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const gpId = req.user.gramPanchayat._id;
+
+    const user = await User.findOneAndUpdate(
+      { _id: id, gramPanchayat: gpId },
+      { isActive: false },
+      { new: true }
+    );
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'User deleted successfully'
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message
+    });
+  }
+};
+
+// @desc    Export users data
+// @route   GET /api/gp-admin/users/export
+// @access  Private (GP Admin)
+const exportUsersData = async (req, res) => {
+  try {
+    const gpId = req.user.gramPanchayat._id;
+
+    const users = await User.find({
+      gramPanchayat: gpId,
+      isActive: true
+    }).select('-password');
+
+    const exportData = users.map(user => ({
+      'Name': user.name,
+      'Email': user.email,
+      'Mobile': user.mobile,
+      'Role': user.role,
+      'Created Date': user.createdAt.toLocaleDateString(),
+      'Last Login': user.lastLogin ? user.lastLogin.toLocaleDateString() : 'Never'
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(exportData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Users');
+
+    const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+
+    res.setHeader('Content-Disposition', 'attachment; filename=users_export.xlsx');
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.send(buffer);
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message
+    });
+  }
+};
+
+// @desc    Export villages data
+// @route   GET /api/gp-admin/villages/export
+// @access  Private (GP Admin)
+const exportVillagesData = async (req, res) => {
+  try {
+    const gpId = req.user.gramPanchayat._id;
+
+    const villages = await Village.find({
+      gramPanchayat: gpId,
+      isActive: true
+    });
+
+    const exportData = await Promise.all(
+      villages.map(async (village) => {
+        const houseCount = await House.countDocuments({ 
+          village: village._id, 
+          isActive: true 
+        });
+
+        return {
+          'Village Name': village.name,
+          'Unique ID': village.uniqueId,
+          'Population': village.population,
+          'House Count': houseCount,
+          'Created Date': village.createdAt.toLocaleDateString()
+        };
+      })
+    );
+
+    const worksheet = XLSX.utils.json_to_sheet(exportData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Villages');
+
+    const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+
+    res.setHeader('Content-Disposition', 'attachment; filename=villages_export.xlsx');
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.send(buffer);
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message
+    });
+  }
+};
+
+// @desc    Export bills data
+// @route   GET /api/gp-admin/bills/export
+// @access  Private (GP Admin)
+const exportBillsData = async (req, res) => {
+  try {
+    const gpId = req.user.gramPanchayat._id;
+
+    const bills = await WaterBill.find({
+      gramPanchayat: gpId
+    }).populate({
+      path: 'house',
+      populate: {
+        path: 'village'
+      }
+    });
+
+    const exportData = bills.map(bill => ({
+      'Bill Number': bill.billNumber,
+      'Customer Name': bill.house?.ownerName || '',
+      'Village': bill.house?.village?.name || '',
+      'Month': bill.month,
+      'Year': bill.year,
+      'Total Amount': bill.totalAmount,
+      'Paid Amount': bill.paidAmount,
+      'Remaining Amount': bill.remainingAmount,
+      'Status': bill.status,
+      'Due Date': bill.dueDate.toLocaleDateString(),
+      'Created Date': bill.createdAt.toLocaleDateString()
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(exportData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Bills');
+
+    const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+
+    res.setHeader('Content-Disposition', 'attachment; filename=bills_export.xlsx');
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.send(buffer);
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message
+    });
+  }
+};
+
+// @desc    Update GP settings
+// @route   PUT /api/gp-admin/settings
+// @access  Private (GP Admin)
+const updateGPSettings = async (req, res) => {
+  try {
+    const gpId = req.user.gramPanchayat._id;
+
+    const gramPanchayat = await GramPanchayat.findByIdAndUpdate(
+      gpId,
+      req.body,
+      { new: true, runValidators: true }
+    );
+
+    res.json({
+      success: true,
+      message: 'Settings updated successfully',
+      data: gramPanchayat
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
   getDashboard,
   getVillages,
   createVillage,
   getVillageDetails,
+  updateVillage,
+  deleteVillage,
+  getHouses,
   createHouse,
   uploadHousesFromExcel,
+  exportHousesData,
   getHouseDetails,
+  updateHouse,
+  deleteHouse,
   generateWaterBill,
+  getBills,
   getBillDetails,
   downloadBillPDF,
   makePayment,
   generatePaymentQRCode,
+  generateGPQRCode,
   updateWaterTariff,
   getUsers,
-  createUser
+  createUser,
+  getUserDetails,
+  updateUser,
+  deleteUser,
+  exportUsersData,
+  exportVillagesData,
+  exportBillsData,
+  updateGPSettings
 };
