@@ -39,7 +39,7 @@ app.use(cors({
       'http://localhost:3001',
       'http://localhost:5173',
       'http://localhost:8080',
-      
+      'https://jal-jeevan-main.vercel.app'
       // Add your production domains here
     ];
     
