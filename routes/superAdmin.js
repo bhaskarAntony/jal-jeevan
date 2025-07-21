@@ -12,7 +12,9 @@ const {
   createGPAdmin,
   getSuperAdmins,
   createSuperAdmin,
-  deleteSuperAdmin
+  deleteSuperAdmin,
+  updateSuperAdmin,
+  getSuperAdminDetails
 } = require('../controllers/superAdminController');
 
 // Apply auth and super admin authorization to all routes
@@ -293,5 +295,138 @@ router.route('/super-admins')
  *         description: Super admin deleted successfully
  */
 router.delete('/super-admins/:id', deleteSuperAdmin);
+
+
+
+/**
+ * @swagger
+ * /api/super-admin/super-admins/{id}:
+ *   get:
+ *     summary: Get single super admin details
+ *     tags: [Super Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Super Admin ID
+ *     responses:
+ *       200:
+ *         description: Super admin details retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     superAdmin:
+ *                       type: object
+ *                       properties:
+ *                         _id:
+ *                           type: string
+ *                         name:
+ *                           type: string
+ *                         email:
+ *                           type: string
+ *                         mobile:
+ *                           type: string
+ *                         role:
+ *                           type: string
+ *                         isActive:
+ *                           type: boolean
+ *                         createdAt:
+ *                           type: string
+ *                           format: date-time
+ *                         updatedAt:
+ *                           type: string
+ *                           format: date-time
+ *       404:
+ *         description: Super admin not found
+ *       500:
+ *         description: Server error
+ *   put:
+ *     summary: Update super admin
+ *     tags: [Super Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Super Admin ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - name
+ *               - email
+ *               - mobile
+ *             properties:
+ *               name:
+ *                 type: string
+ *               email:
+ *                 type: string
+ *                 format: email
+ *               mobile:
+ *                 type: string
+ *               password:
+ *                 type: string
+ *                 minLength: 6
+ *               isActive:
+ *                 type: boolean
+ *     responses:
+ *       200:
+ *         description: Super admin updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     _id:
+ *                       type: string
+ *                     name:
+ *                       type: string
+ *                     email:
+ *                       type: string
+ *                     mobile:
+ *                       type: string
+ *                     role:
+ *                       type: string
+ *                     isActive:
+ *                       type: boolean
+ *                     createdAt:
+ *                       type: string
+ *                       format: date-time
+ *                     updatedAt:
+ *                       type: string
+ *                       format: date-time
+ *       404:
+ *         description: Super admin not found
+ *       500:
+ *         description: Server error
+ */
+router.route('/super-admins/:id')
+  .get(getSuperAdminDetails)
+  .put(validate(schemas.updateSuperAdmin), updateSuperAdmin);
+
 
 module.exports = router;

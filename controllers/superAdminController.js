@@ -366,8 +366,86 @@ const deleteSuperAdmin = async (req, res) => {
     });
   }
 };
+// @desc    Get single super admin details
+// @route   GET /api/super-admin/super-admins/:id
+// @access  Private (Super Admin)
+const getSuperAdminDetails = async (req, res) => {
+  try {
+    const superAdmin = await User.findById(req.params.id)
+      .select('-password')
+      .where({ role: 'super_admin' });
+
+    if (!superAdmin) {
+      return res.status(404).json({
+        success: false,
+        message: 'Super Admin not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: { superAdmin }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message
+    });
+  }
+};
+
+// @desc    Update super admin
+// @route   PUT /api/super-admin/super-admins/:id
+// @access  Private (Super Admin)
+const updateSuperAdmin = async (req, res) => {
+  try {
+    const { name, email, mobile, password, isActive } = req.body;
+
+    const updateData = {
+      name,
+      email,
+      mobile,
+      isActive
+    };
+
+    if (password) {
+      updateData.password = password;
+    }
+
+    const superAdmin = await User.findByIdAndUpdate(
+      req.params.id,
+      updateData,
+      { new: true, runValidators: true }
+    ).where({ role: 'super_admin' })
+     .select('-password');
+
+    if (!superAdmin) {
+      return res.status(404).json({
+        success: false,
+        message: 'Super Admin not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Super Admin updated successfully',
+      data: superAdmin
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message
+    });
+  }
+};
+
+
 
 module.exports = {
+   getSuperAdminDetails,
+  updateSuperAdmin,
   getDashboard,
   getGramPanchayats,
   createGramPanchayat,
