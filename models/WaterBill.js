@@ -84,6 +84,10 @@ const waterBillSchema = new mongoose.Schema({
   dueDate: {
     type: Date,
     required: true
+  },
+  isActive: {
+    type: Boolean,
+    default: true
   }
 }, {
   timestamps: true

@@ -760,7 +760,9 @@ const {
   exportUsersData,
   exportVillagesData,
   exportBillsData,
-  updateGPSettings
+  updateGPSettings,
+  deleteWaterBill,
+  editWaterBill
 } = require('../controllers/gpAdminController');
 
 /**
@@ -1286,5 +1288,9 @@ router.route('/users/:id')
  *         description: Settings updated
  */
 router.put('/settings', updateGPSettings);
+router.get('/houses/:houseId', getHouseDetails);
+// router.get('/bills/:id', getHouseDetails);
+router.put('/bills/:id', editWaterBill);
+router.delete('/bills/:id', deleteWaterBill);
 
 module.exports = router;

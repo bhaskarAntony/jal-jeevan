@@ -1650,6 +1650,187 @@ const updateGPSettings = async (req, res) => {
     });
   }
 };
+// @desc    Edit water bill
+// @route   PUT /api/gp-admin/bills/:id
+// @access  Private (GP Admin)
+const editWaterBill = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { currentReading, month, year, dueDate, interest, others } = req.body;
+    const gpId = req.user.gramPanchayat._id;
+
+    // Find the bill
+    const bill = await WaterBill.findOne({
+      _id: id,
+      gramPanchayat: gpId,
+      isActive: true
+    }).populate({
+      path: 'house',
+      populate: {
+        path: 'village'
+      }
+    });
+
+    if (!bill) {
+      return res.status(404).json({
+        success: false,
+        message: 'Bill not found'
+      });
+    }
+
+    // Check if bill is editable (not fully paid)
+    if (bill.status === 'paid') {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot edit a fully paid bill'
+      });
+    }
+
+    // Get house and Gram Panchayat for calculations
+    const house = await House.findById(bill.house._id);
+    const gramPanchayat = await GramPanchayat.findById(gpId);
+
+    // Calculate new values if currentReading is updated
+    let updatedFields = { month, year, dueDate: new Date(dueDate), interest, others };
+    if (currentReading !== undefined) {
+      if (currentReading < bill.previousReading) {
+        return res.status(400).json({
+          success: false,
+          message: 'Current reading cannot be less than previous reading'
+        });
+      }
+      const totalUsage = currentReading - bill.previousReading;
+      const currentDemand = calculateWaterBill(totalUsage, gramPanchayat.waterTariff, house.usageType);
+
+      // Update arrears (exclude the current bill from arrears calculation)
+      const unpaidBills = await WaterBill.find({
+        house: house._id,
+        _id: { $ne: bill._id },
+        status: { $in: ['pending', 'partial'] },
+        isActive: true
+      });
+      const arrears = roundToTwo(unpaidBills.reduce((sum, b) => sum + b.remainingAmount, 0));
+
+      updatedFields = {
+        ...updatedFields,
+        currentReading,
+        totalUsage,
+        currentDemand: roundToTwo(currentDemand),
+        arrears,
+        totalAmount: roundToTwo(currentDemand + arrears + (interest || bill.interest) + (others || bill.others)),
+        remainingAmount: roundToTwo(
+          currentDemand + arrears + (interest || bill.interest) + (others || bill.others) - bill.paidAmount
+        )
+      };
+    } else {
+      // If currentReading is not updated, recalculate totalAmount and remainingAmount with new interest/others
+      updatedFields.totalAmount = roundToTwo(
+        bill.currentDemand + bill.arrears + (interest || bill.interest) + (others || bill.others)
+      );
+      updatedFields.remainingAmount = roundToTwo(updatedFields.totalAmount - bill.paidAmount);
+    }
+
+    // Update bill
+    const updatedBill = await WaterBill.findByIdAndUpdate(
+      id,
+      { $set: updatedFields },
+      { new: true, runValidators: true }
+    ).populate({
+      path: 'house',
+      populate: {
+        path: 'village'
+      }
+    });
+
+    // Update house previousMeterReading if currentReading was updated
+    if (currentReading !== undefined) {
+      house.previousMeterReading = currentReading;
+      await house.save();
+    }
+
+    res.json({
+      success: true,
+      message: 'Bill updated successfully',
+      data: {
+        bill: updatedBill,
+        gramPanchayat: {
+          id: gramPanchayat._id,
+          gramPanchayatId: gramPanchayat._id,
+          name: gramPanchayat.name,
+          uniqueId: gramPanchayat.uniqueId
+        }
+      }
+    });
+  } catch (error) {
+    if (error.name === 'ValidationError') {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation error',
+        error: error.message
+      });
+    }
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message
+    });
+  }
+};
+
+// @desc    Delete water bill
+// @route   DELETE /api/gp-admin/bills/:id
+// @access  Private (GP Admin)
+const deleteWaterBill = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const gpId = req.user.gramPanchayat._id;
+
+    // Find the bill
+    const bill = await WaterBill.findOne({
+      _id: id,
+      gramPanchayat: gpId,
+      isActive: true
+    });
+
+    if (!bill) {
+      return res.status(404).json({
+        success: false,
+        message: 'Bill not found'
+      });
+    }
+
+    // Check if bill is deletable (not fully paid)
+    if (bill.status === 'paid') {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot delete a fully paid bill'
+      });
+    }
+
+    // Soft delete the bill
+    bill.isActive = false;
+    await bill.save();
+
+    // Revert house's previousMeterReading to the bill's previousReading
+    const house = await House.findById(bill.house);
+    house.previousMeterReading = bill.previousReading;
+    await house.save();
+
+    // Delete associated payments
+    await Payment.deleteMany({ bill: bill._id });
+
+    res.json({
+      success: true,
+      message: 'Bill deleted successfully'
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message
+    });
+  }
+};
 
 module.exports = {
   getDashboard,
@@ -1681,5 +1862,7 @@ module.exports = {
   exportUsersData,
   exportVillagesData,
   exportBillsData,
-  updateGPSettings
+  updateGPSettings,
+  editWaterBill,
+  deleteWaterBill
 };

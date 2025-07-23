@@ -501,6 +501,101 @@ const getHouseDetails = async (req, res) => {
   }
 };
 
+// @desc    Get all bills for a specific house
+// @route   GET /api/biller/houses/:houseId/bills
+// @access  Private (Mobile User/Biller)
+const getHouseBills = async (req, res) => {
+  try {
+    const { houseId } = req.params;
+    const { page = 1, limit = 10 } = req.query;
+    const gpId = req.user.gramPanchayat._id;
+
+    // Validate houseId format
+    if (!mongoose.Types.ObjectId.isValid(houseId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid house ID format'
+      });
+    }
+
+    // Verify house exists and belongs to the Gram Panchayat
+    const house = await House.findOne({
+      _id: houseId,
+      gramPanchayat: gpId,
+      isActive: true
+    }).populate('village');
+
+    if (!house) {
+      return res.status(404).json({
+        success: false,
+        message: 'House not found or does not belong to your Gram Panchayat'
+      });
+    }
+
+    // Fetch bills for the house with pagination
+    const bills = await WaterBill.find({
+      house: house._id,
+      gramPanchayat: gpId
+    })
+      .populate({
+        path: 'house',
+        populate: {
+          path: 'village'
+        }
+      })
+      .sort({ createdAt: -1 })
+      .limit(limit * 1)
+      .skip((page - 1) * limit);
+
+    // Count total bills for pagination
+    const totalBills = await WaterBill.countDocuments({
+      house: house._id,
+      gramPanchayat: gpId
+    });
+
+    const gramPanchayat = await GramPanchayat.findById(gpId);
+
+    res.json({
+      success: true,
+      data: {
+        bills,
+        house: {
+          ...house.toObject(),
+          village: {
+            ...house.village.toObject(),
+            villageId: house.village._id
+          }
+        },
+        pagination: {
+          current: parseInt(page),
+          total: Math.ceil(totalBills / limit),
+          count: bills.length,
+          totalRecords: totalBills
+        },
+        gramPanchayat: {
+          id: gramPanchayat._id,
+          gramPanchayatId: gramPanchayat._id,
+          name: gramPanchayat.name,
+          uniqueId: gramPanchayat.uniqueId,
+          district: gramPanchayat.district,
+          taluk: gramPanchayat.taluk,
+          address: gramPanchayat.address,
+          contactPerson: gramPanchayat.contactPerson,
+          waterTariff: gramPanchayat.waterTariff,
+          qrCodeData: gramPanchayat.qrCodeData
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Get house bills error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch bills',
+      error: error.message
+    });
+  }
+};
+
 // @desc    Generate water bill for house
 // @route   POST /api/biller/houses/:houseId/generate-bill
 // @access  Private (Mobile User/Biller)
@@ -1242,6 +1337,7 @@ module.exports = {
   getVillages,
   createHouse,
   getHouseDetails,
+  getHouseBills,
   generateWaterBill,
   getBillDetails,
   getFinalViewBill,
