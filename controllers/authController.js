@@ -8,39 +8,142 @@ const generateToken = (id) => {
     expiresIn: process.env.JWT_EXPIRES_IN
   });
 };
-const register = async(req, res)=>{
+
+// @desc    Register a new user
+// @route   POST /api/auth/register
+// @access  Public
+const register = async (req, res) => {
   try {
-    const newuser = new User(req.body);
-    await newuser.save();
-    res.status(200).json({
-      messag:"user created",
-      data:newuser
-    })
+    const { name, email, mobile, password, role, gramPanchayat } = req.body;
+
+    // Check if user already exists
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return res.status(400).json({
+        success: false,
+        message: 'User with this email already exists'
+      });
+    }
+
+    // Validate role
+    const validRoles = ['super_admin', 'gp_admin', 'mobile_user', 'pillar_admin'];
+    if (!validRoles.includes(role)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid role'
+      });
+    }
+
+    // Validate gramPanchayat for required roles
+    if (['gp_admin', 'mobile_user', 'pillar_admin'].includes(role) && !gramPanchayat) {
+      return res.status(400).json({
+        success: false,
+        message: 'gramPanchayat is required for this role'
+      });
+    }
+
+    const newUser = new User({
+      name,
+      email,
+      mobile,
+      password,
+      role,
+      gramPanchayat
+    });
+
+    await newUser.save();
+
+    res.status(201).json({
+      success: true,
+      message: 'User created successfully',
+      data: {
+        id: newUser._id,
+        name: newUser.name,
+        email: newUser.email,
+        role: newUser.role,
+        gramPanchayat: newUser.gramPanchayat
+      }
+    });
   } catch (error) {
     res.status(500).json({
-      message:"error on creating user",
-      data:error
-    })
+      success: false,
+      message: 'Error creating user',
+      error: error.message
+    });
   }
-}
-// @desc    Login user
-// @route   POST /api/auth/login
+};
+
+// @desc    Request OTP for login
+// @route   POST /api/auth/request-otp
 // @access  Public
-const login = async (req, res) => {
+const requestLoginOTP = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email } = req.body;
 
     // Check if user exists
     const user = await User.findOne({ email, isActive: true })
       .populate('gramPanchayat');
 
-    if (!user || !(await user.comparePassword(password))) {
-      return res.status(401).json({
+    if (!user) {
+      return res.status(404).json({
         success: false,
-        message: 'Invalid email or password'
+        message: 'User not found'
       });
     }
 
+    // Generate OTP
+    const otp = user.generateOTP();
+    await user.save();
+
+    // Send OTP email
+    const emailResult = await sendOTPEmail(email, otp, user.name);
+    
+    if (!emailResult.success) {
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to send OTP email'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'OTP sent to your email',
+      data: { email }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message
+    });
+  }
+};
+
+// @desc    Verify OTP and login
+// @route   POST /api/auth/verify-login-otp
+// @access  Public
+const verifyLoginOTP = async (req, res) => {
+  try {
+    const { email, otp } = req.body;
+
+    const user = await User.findOne({
+      email,
+      otpCode: otp,
+      otpExpires: { $gt: Date.now() },
+      isActive: true
+    }).populate('gramPanchayat');
+
+    if (!user) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid or expired OTP'
+      });
+    }
+
+    // Clear OTP
+    user.otpCode = undefined;
+    user.otpExpires = undefined;
+    
     // Update last login
     user.lastLogin = new Date();
     await user.save();
@@ -211,7 +314,8 @@ const getProfile = async (req, res) => {
 
 module.exports = {
   register,
-  login,
+  requestLoginOTP,
+  verifyLoginOTP,
   forgotPassword,
   verifyOTP,
   resetPassword,

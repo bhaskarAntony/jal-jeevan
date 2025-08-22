@@ -16,12 +16,20 @@ const validate = (schema) => {
 
 // Validation schemas
 const schemas = {
-  login: Joi.object({
+  register: Joi.object({
+    name: Joi.string().required(),
     email: Joi.string().email().required(),
-    password: Joi.string().min(6).required()
+    mobile: Joi.string().required(),
+    password: Joi.string().min(6).required(),
+    role: Joi.string().valid('super_admin', 'gp_admin', 'mobile_user', 'pillar_admin').required(),
+    gramPanchayat: Joi.string().when('role', {
+      is: Joi.valid('gp_admin', 'mobile_user', 'pillar_admin'),
+      then: Joi.string().pattern(/^[0-9a-fA-F]{24}$/).required(),
+      otherwise: Joi.string().optional()
+    })
   }),
 
-  forgotPassword: Joi.object({
+  requestOTP: Joi.object({
     email: Joi.string().email().required()
   }),
 
@@ -30,11 +38,14 @@ const schemas = {
     otp: Joi.string().length(6).required()
   }),
 
+  forgotPassword: Joi.object({
+    email: Joi.string().email().required()
+  }),
+
   resetPassword: Joi.object({
     email: Joi.string().email().required(),
     otp: Joi.string().length(6).required(),
-    newPassword: Joi.string().min(6).required(),
-    confirmPassword: Joi.string().valid(Joi.ref('newPassword')).required()
+    newPassword: Joi.string().min(6).required()
   }),
 
   createGramPanchayat: Joi.object({
@@ -60,7 +71,7 @@ const schemas = {
     gramPanchayat: Joi.string().when('role', {
       is: Joi.valid('gp_admin', 'mobile_user', 'pillar_admin'),
       then: Joi.string().pattern(/^[0-9a-fA-F]{24}$/).required(),
-      otherwise: Joi.optional()
+      otherwise: Joi.string().optional()
     })
   }),
 
@@ -79,10 +90,10 @@ const schemas = {
     address: Joi.string().required(),
     waterMeterNumber: Joi.string().required(),
     previousMeterReading: Joi.number().min(0).default(0),
-    sequenceNumber: Joi.string().optional(), // Made optional since it's auto-generated
+    sequenceNumber: Joi.string().optional(),
     usageType: Joi.string().valid('residential', 'commercial', 'institutional', 'industrial').required(),
     propertyNumber: Joi.string().required()
-  }).or('village', 'villageId'), // At least one of village or villageId must be present
+  }).or('village', 'villageId'),
 
   generateBill: Joi.object({
     previousReading: Joi.number().min(0).required(),
@@ -94,7 +105,7 @@ const schemas = {
   }),
 
   makePayment: Joi.object({
-    amount: Joi.number().min(0).required(), // Changed from 0.01 to 0 to allow zero amounts
+    amount: Joi.number().min(0).required(),
     paymentMode: Joi.string().valid('cash', 'upi', 'online', 'pay_later').required(),
     transactionId: Joi.when('paymentMode', {
       is: Joi.valid('upi', 'online'),

@@ -20,7 +20,7 @@ const sendOTPEmail = async (email, otp, name) => {
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
           <h2 style="color: #2563eb;">Water Management System</h2>
           <p>Dear ${name},</p>
-          <p>Your OTP for password reset is:</p>
+          <p>Your OTP for verification is:</p>
           <div style="background-color: #f3f4f6; padding: 20px; margin: 20px 0; text-align: center;">
             <h1 style="color: #1f2937; font-size: 32px; margin: 0;">${otp}</h1>
           </div>
