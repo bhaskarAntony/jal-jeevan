@@ -1242,14 +1242,16 @@ const generateGPQRCode = async (req, res) => {
 const updateWaterTariff = async (req, res) => {
   try {
     const gpId = req.user.gramPanchayat._id;
-    const { domestic, nonDomestic } = req.body;
-
+    const { domestic, nonDomestic, fixedAmount } = req.body;
+    console.log({domestic, nonDomestic, fixedAmount});
+    
     const gramPanchayat = await GramPanchayat.findByIdAndUpdate(
       gpId,
       {
         $set: {
           'waterTariff.domestic': domestic,
-          'waterTariff.nonDomestic': nonDomestic
+          'waterTariff.nonDomestic': nonDomestic,
+          'waterTariff.fixedAmount':fixedAmount
         }
       },
       { new: true, runValidators: true }

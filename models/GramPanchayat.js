@@ -85,6 +85,10 @@ const gramPanchayatSchema = new mongoose.Schema({
         type: Number,
         default: 0
       }
+    },
+    fixedAmount:{
+      type:Number,
+      default:0
     }
   },
   qrCodeData: {
