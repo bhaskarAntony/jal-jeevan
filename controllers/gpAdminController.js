@@ -48,7 +48,9 @@ const getDashboard = async (req, res) => {
     });
 
     const thisMonthCollection = roundToTwo(monthlyBills.reduce((sum, bill) => sum + bill.paidAmount, 0));
-    const paidBills = monthlyBills.filter(bill => bill.status === 'paid').length;
+    console.log(monthlyBills);
+    
+    const paidBills = monthlyBills.filter(bill => bill.status === 'paid' || bill.status =='partial').length;
     const unpaidBills = monthlyBills.filter(bill => bill.status === 'pending').length;
 
     // Recent bills
@@ -775,7 +777,9 @@ const deleteHouse = async (req, res) => {
 const generateWaterBill = async (req, res) => {
   try {
     const { id } = req.params;
-    const { currentReading, month, year, dueDate } = req.body;
+    console.log(req.body);
+    
+    const { currentReading, month, year} = req.body;
     const gpId = req.user.gramPanchayat._id;
 
     const house = await House.findOne({
@@ -828,7 +832,7 @@ const generateWaterBill = async (req, res) => {
       others: 0,
       totalAmount: roundToTwo(currentDemand + arrears),
       remainingAmount: roundToTwo(currentDemand + arrears),
-      dueDate: new Date(dueDate),
+      dueDate: gramPanchayat.DueDays?gramPanchayat.DueDays: "Not Set",
       status: 'pending'
     });
 
@@ -990,40 +994,87 @@ const getBillDetails = async (req, res) => {
 const downloadBillPDF = async (req, res) => {
   try {
     const { id } = req.params;
-    const gpId = req.user.gramPanchayat._id;
+    const gpId = req.user?.gramPanchayat?._id;
 
-    const bill = await WaterBill.findOne({
-      _id: id,
-      gramPanchayat: gpId
-    }).populate({
-      path: 'house',
-      populate: {
-        path: 'village'
-      }
-    });
-
-    if (!bill) {
-      return res.status(404).json({
+    // Validate inputs
+    if (!id || !gpId) {
+      console.error('Invalid input:', { id, gpId });
+      return res.status(400).json({
         success: false,
-        message: 'Bill not found'
+        message: 'Bill ID or Gram Panchayat ID is missing',
       });
     }
 
-    const gramPanchayat = await GramPanchayat.findById(gpId);
-    const pdfPath = await generateBillPDF(bill, bill.house, gramPanchayat);
-    
-    res.download(pdfPath, `bill_${bill.billNumber}.pdf`, (err) => {
-      if (err) {
-        console.error('PDF download error:', err);
-      }
-      // Clean up temp file
-      fs.unlinkSync(pdfPath);
+    // Fetch bill
+    const bill = await WaterBill.findOne({
+      _id: id,
+      gramPanchayat: gpId,
+    }).populate({
+      path: 'house',
+      populate: {
+        path: 'village',
+      },
     });
+
+    if (!bill) {
+      console.error('Bill not found:', { id, gpId });
+      return res.status(404).json({
+        success: false,
+        message: 'Bill not found',
+      });
+    }
+
+    // Fetch Gram Panchayat
+    const gramPanchayat = await GramPanchayat.findById(gpId);
+    if (!gramPanchayat) {
+      console.error('Gram Panchayat not found:', { gpId });
+      return res.status(404).json({
+        success: false,
+        message: 'Gram Panchayat not found',
+      });
+    }
+
+    // Generate PDF
+    const pdfPath = await generateBillPDF(bill, bill.house, gramPanchayat);
+
+    // Set response headers
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename=bill_${bill.billNumber}.pdf`);
+
+    // Stream the file
+    const fileStream = require('fs').createReadStream(pdfPath);
+    fileStream.pipe(res);
+
+    // Clean up file after streaming
+    fileStream.on('end', async () => {
+      try {
+        await fs.unlink(pdfPath);
+        console.log(`Temporary file deleted: ${pdfPath}`);
+      } catch (err) {
+        console.error('Error deleting temporary file:', err);
+      }
+    });
+
+    fileStream.on('error', (err) => {
+      console.error('File stream error:', err);
+      res.status(500).json({
+        success: false,
+        message: 'Error streaming PDF',
+        error: err.message,
+      });
+    });
+
   } catch (error) {
+    console.error('Download PDF error:', {
+      message: error.message,
+      stack: error.stack,
+      id,
+      gpId,
+    });
     res.status(500).json({
       success: false,
       message: 'Server error',
-      error: error.message
+      error: error.message,
     });
   }
 };

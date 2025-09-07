@@ -101,7 +101,7 @@ const schemas = {
     totalUsage: Joi.number().min(0).required(),
     month: Joi.string().required(),
     year: Joi.number().integer().min(2020).max(2030).required(),
-    dueDate: Joi.date().required()
+    // dueDate: Joi.string().required()
   }),
 
   makePayment: Joi.object({

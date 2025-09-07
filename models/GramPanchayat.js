@@ -1,3 +1,4 @@
+const { required } = require('joi');
 const mongoose = require('mongoose');
 
 const gramPanchayatSchema = new mongoose.Schema({
@@ -36,6 +37,11 @@ const gramPanchayatSchema = new mongoose.Schema({
     type: String,
     required: true,
     trim: true
+  },
+  DueDays:{
+    type:String,
+    required:true,
+    default:'Not Set'
   },
   contactPerson: {
     name: {
