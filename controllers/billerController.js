@@ -18,6 +18,8 @@ const roundToTwo = (num) => Math.round((num + Number.EPSILON) * 100) / 100;
 // @access  Private (Mobile User/Biller)
 const getDashboard = async (req, res) => {
   try {
+    console.log(req.user);
+    
     const gpId = req.user.gramPanchayat._id;
     const currentMonth = moment().format('MMMM');
     const currentYear = moment().year();
@@ -603,14 +605,15 @@ const generateWaterBill = async (req, res) => {
   try {
     const { houseId } = req.params;
     const { 
-      previousReading, 
+      previousReading,
+      totalUsage,
       currentReading, 
-      totalUsage, 
       month, 
       year, 
-      dueDate 
     } = req.body;
-
+    console.log(req.body);
+    console.log(req.req);
+    
     const gpId = req.user.gramPanchayat._id;
 
     // Validate houseId format
@@ -622,12 +625,12 @@ const generateWaterBill = async (req, res) => {
     }
 
     // Validate required fields
-    if (previousReading === undefined || currentReading === undefined || totalUsage === undefined || !month || !year || !dueDate) {
-      return res.status(400).json({
-        success: false,
-        message: 'All required fields must be provided'
-      });
-    }
+    // if (previousReading === undefined || currentReading === undefined || totalUsage === undefined || !month || !year || !dueDate) {
+    //   return res.status(400).json({
+    //     success: false,
+    //     message: 'All required fields must be provided'
+    //   });
+    // }
 
     const house = await House.findOne({
       _id: houseId,
@@ -643,31 +646,24 @@ const generateWaterBill = async (req, res) => {
     }
 
     // Validate readings
-    const prevReading = parseFloat(previousReading);
-    const currReading = parseFloat(currentReading);
+    //  const previousReading = house.previousMeterReading;
+    // const totalUsage = currentReading - previousReading;
     const usage = parseFloat(totalUsage);
 
-    if (isNaN(prevReading) || isNaN(currReading) || isNaN(usage)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid reading values. Must be valid numbers'
-      });
-    }
-
-    if (currReading < prevReading) {
+   if (totalUsage < 0) {
       return res.status(400).json({
         success: false,
         message: 'Current reading cannot be less than previous reading'
       });
     }
 
-    const calculatedUsage = currReading - prevReading;
-    if (Math.abs(calculatedUsage - usage) > 0.01) {
-      return res.status(400).json({
-        success: false,
-        message: 'Total usage calculation mismatch'
-      });
-    }
+    // const calculatedUsage = currReading - prevReading;
+    // if (Math.abs(calculatedUsage - usage) > 0.01) {
+    //   return res.status(400).json({
+    //     success: false,
+    //     message: 'Total usage calculation mismatch'
+    //   });
+    // }
 
     const gramPanchayat = await GramPanchayat.findById(gpId);
 
@@ -675,35 +671,53 @@ const generateWaterBill = async (req, res) => {
     const currentDemand = calculateWaterBill(usage, gramPanchayat.waterTariff, house.usageType);
 
     // Check for arrears from previous unpaid bills
-    const unpaidBills = await WaterBill.find({
-      house: house._id,
-      status: { $in: ['pending', 'partial'] }
-    });
+      const unpaidBills = await WaterBill.find({
+         house: house._id,
+         status: { $in: ['pending', 'partial'] }
+       });
+   
+       const arrears = roundToTwo(unpaidBills.reduce((sum, bill) => sum + bill.remainingAmount, 0));
+   
+       const bill = new WaterBill({
+         house: house._id,
+         gramPanchayat: gpId,
+         month,
+         year: parseInt(year),
+         previousReading,
+         currentReading,
+         totalUsage,
+         currentDemand: roundToTwo(currentDemand),
+         arrears,
+         interest: 0,
+         others: 0,
+         totalAmount: roundToTwo(currentDemand + arrears),
+         remainingAmount: roundToTwo(currentDemand + arrears),
+         dueDate: gramPanchayat.DueDays?gramPanchayat.DueDays: "Not Set",
+         status: 'pending'
+       });
 
-    const arrears = roundToTwo(unpaidBills.reduce((sum, bill) => sum + bill.remainingAmount, 0));
-
-    const bill = new WaterBill({
-      house: house._id,
-      gramPanchayat: gpId,
-      month,
-      year: parseInt(year),
-      previousReading: prevReading,
-      currentReading: currReading,
-      totalUsage: usage,
-      currentDemand: roundToTwo(currentDemand),
-      arrears,
-      interest: 0,
-      others: 0,
-      totalAmount: roundToTwo(currentDemand + arrears),
-      remainingAmount: roundToTwo(currentDemand + arrears),
-      dueDate: new Date(dueDate),
-      status: 'pending' // Explicitly set status
-    });
+    // const bill = new WaterBill({
+    //   house: house._id,
+    //   gramPanchayat: gpId,
+    //   month,
+    //   year: parseInt(year),
+    //   previousReading: prevReading,
+    //   currentReading: currReading,
+    //   totalUsage: usage,
+    //   currentDemand: roundToTwo(currentDemand),
+    //   arrears,
+    //   interest: 0,
+    //   others: 0,
+    //   totalAmount: roundToTwo(currentDemand + arrears),
+    //   remainingAmount: roundToTwo(currentDemand + arrears),
+    //   dueDate: gramPanchayat.DueDays?gramPanchayat.DueDays: "Not Set",
+    //   status: 'pending' // Explicitly set status
+    // });
 
     await bill.save();
 
     // Update house previous reading
-    house.previousMeterReading = currReading;
+    house.previousMeterReading = currentReading;
     await house.save();
 
     const populatedBill = await WaterBill.findById(bill._id).populate({

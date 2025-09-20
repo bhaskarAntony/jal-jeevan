@@ -79,6 +79,8 @@ const register = async (req, res) => {
 const requestLoginOTP = async (req, res) => {
   try {
     const { email } = req.body;
+    console.log(email);
+    
 
     // Check if user exists
     const user = await User.findOne({ email, isActive: true })
@@ -90,13 +92,18 @@ const requestLoginOTP = async (req, res) => {
         message: 'User not found'
       });
     }
+    console.log(user);
+
 
     // Generate OTP
     const otp = user.generateOTP();
+    console.log(otp);
+    
     await user.save();
 
     // Send OTP email
     const emailResult = await sendOTPEmail(email, otp, user.name);
+    console.log(emailResult);
     
     if (!emailResult.success) {
       return res.status(500).json({

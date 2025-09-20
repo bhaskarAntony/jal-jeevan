@@ -10,7 +10,7 @@ const options = {
     },
     servers: [
       {
-        // url: `http://localhost:${process.env.PORT || 3000}`,
+        // url: `http://localhost:3001`,
         // url: `http://localhost:${process.env.PORT || 3000}`, https://jal-jeevan.onrender.com
         url: `https://jal-jeevan.onrender.com`,
         description: 'Proudction server',
