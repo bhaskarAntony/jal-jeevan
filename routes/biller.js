@@ -264,7 +264,24 @@ router.get('/houses/:houseId', getHouseDetails);
  *       content:
  *         application/json:
  *           schema:
- *             $ref: '#/components/schemas/GenerateBillRequest'
+ *             type: object
+ *             required:
+ *               - previousReading
+ *               - currentReading
+ *               - totalUsage
+ *               - month
+ *               - year
+ *             properties:
+ *               previousReading:
+ *                 type: number
+ *               currentReading:
+ *                 type: number
+ *               totalUsage:
+ *                 type: number
+ *               month:
+ *                 type: string
+ *               year:
+ *                 type: number
  *     responses:
  *       201:
  *         description: Water bill generated successfully
