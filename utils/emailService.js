@@ -13,7 +13,7 @@ const transporter = nodemailer.createTransport({
 const sendOTPEmail = async (email, otp, name) => {
   try {
     const mailOptions = {
-      from: "bhaskarbabucm6@gmail.com",
+      from: "abhiram.founder@primeadagency.com",
       to: email,
       subject: 'Water Management System - OTP Verification',
       html: `
